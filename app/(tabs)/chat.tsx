@@ -461,10 +461,10 @@ function buildTransferMessages(
     {
       id: `assistant-${seed}-transfer-execute`,
       role: "assistant",
-      title: "转账执行回执",
-      content: `当前项目暂未接入独立转账广播接口，因此这里先返回待接入提示。\n发送地址：${maskAddress(fromAddress)}\n接收地址：${maskAddress(intent.address)}\n金额：${intent.amount} ${intent.symbol}`,
+      title: "转账执行状态",
+      content: `我已经完成转账参数整理，但当前项目尚未接入独立广播能力，因此先将关键信息整理给你确认。\n发送地址：${maskAddress(fromAddress)}\n接收地址：${maskAddress(intent.address)}\n金额：${intent.amount} ${intent.symbol}`,
       tone: "warning",
-      meta: "该能力尚未接入真实链上广播。",
+      meta: "当前为待广播状态，后续接入真实链上广播后可直接执行。",
     },
   ];
 }
