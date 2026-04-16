@@ -1,0 +1,16 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/chat/intent", "destination": "/api/chat?route=chat-intent" },
+    { "source": "/api/chat-ai/intent", "destination": "/api/chat?route=chat-ai-intent" },
+    { "source": "/api/dex/config", "destination": "/api/dex?route=config" },
+    { "source": "/api/dex/intent", "destination": "/api/dex?route=intent" },
+    { "source": "/api/dex/quote", "destination": "/api/dex?route=quote" },
+    { "source": "/api/dex/execute", "destination": "/api/dex?route=execute" },
+    { "source": "/api/dex/orders", "destination": "/api/dex?route=orders" },
+    { "source": "/api/okx/onchain/price", "destination": "/api/okx/onchain?route=price" },
+    { "source": "/api/okx/onchain/token-detail", "destination": "/api/okx/onchain?route=token-detail" },
+    { "source": "/", "destination": "/api" }
+  ]
+}

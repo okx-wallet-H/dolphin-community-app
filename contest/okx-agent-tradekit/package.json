@@ -1,0 +1,23 @@
+{
+  "name": "okx-agent-contest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OKX Agent Trade Kit 交易赛独立参赛脚本项目",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit",
+    "run:once": "tsx src/index.ts --once",
+    "doctor": "tsx src/index.ts --doctor"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
