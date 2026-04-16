@@ -318,6 +318,12 @@ export default function CommunityRoute() {
               placeholder="搜索代币、合约、地址"
               placeholderTextColor="#8B90A7"
               style={styles.searchInput}
+              returnKeyType="search"
+              onSubmitEditing={() => {
+                const keyword = searchText.trim();
+                if (!keyword) return;
+                router.push({ pathname: "/(tabs)/chat", params: { q: keyword, source: "community" } });
+              }}
             />
             {searchText ? (
               <Pressable style={styles.searchAction} onPress={() => setSearchText("")}>
