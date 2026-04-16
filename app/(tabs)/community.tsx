@@ -1,6 +1,7 @@
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -14,6 +15,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppHeader } from "@/components/AppHeader";
+import { TopTabs } from "@/components/TopTabs";
 import {
   getStrategyLogs,
   getStrategyPerformance,
@@ -214,6 +217,7 @@ function PerformanceBars({ items }: { items: Array<{ id: string; time: string; v
 }
 
 export default function CommunityRoute() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -288,6 +292,23 @@ export default function CommunityRoute() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PRIMARY} />}
       >
+        <View style={styles.fixedHeaderWrap}>
+          <AppHeader
+            onWalletPress={() => router.push("/(tabs)/wallet")}
+            onRightPress={() => router.push("/(tabs)/profile")}
+            centerContent={
+              <TopTabs
+                activeTab="community"
+                onChange={(tab) => {
+                  if (tab === "chat") {
+                    router.push("/(tabs)/chat");
+                  }
+                }}
+              />
+            }
+          />
+        </View>
+
         <View style={styles.searchHeader}>
           <View style={styles.searchBox}>
             <MaterialCommunityIcons name="magnify" size={20} color={TEXT_SECONDARY} />
@@ -522,6 +543,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: PAGE_BG,
+  },
+  fixedHeaderWrap: {
+    marginBottom: 2,
   },
   scrollView: {
     flex: 1,
