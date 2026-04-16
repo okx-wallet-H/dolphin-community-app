@@ -385,7 +385,7 @@ export default function CommunityRoute() {
 
         {syncedPlan ? (
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>自动任务卡片</Text>
+            <Text style={styles.sectionTitle}>自动任务回执</Text>
           </View>
         ) : null}
         {syncedPlan ? (
@@ -396,7 +396,7 @@ export default function CommunityRoute() {
         ) : null}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>策略运行面板</Text>
+          <Text style={styles.sectionTitle}>策略运行概览</Text>
           <Text style={styles.sectionMeta}>MCP 工具数 {toolCount}</Text>
         </View>
         <View style={styles.panelGrid}>
@@ -418,7 +418,7 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>收益展示</Text>
+          <Text style={styles.sectionTitle}>收益判断依据</Text>
           <Text style={styles.sectionMeta}>直接来自 balance / bills 原始结果</Text>
         </View>
         <View style={styles.card}>
@@ -449,7 +449,7 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>持仓展示</Text>
+          <Text style={styles.sectionTitle}>仓位与资产判断</Text>
           <Text style={styles.sectionMeta}>优先展示 balance.details，其次展示 positions.data</Text>
         </View>
         <View style={styles.card}>
@@ -477,7 +477,7 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>最近交易记录</Text>
+          <Text style={styles.sectionTitle}>近期交易线索</Text>
           <Text style={styles.sectionMeta}>直接来自 fills 原始结果</Text>
         </View>
         <View style={styles.card}>
@@ -504,7 +504,7 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>策略日志</Text>
+          <Text style={styles.sectionTitle}>策略执行线索</Text>
           <Text style={styles.sectionMeta}>优先展示 tradeHistory，否则展示 orders 原始结果</Text>
         </View>
         <View style={styles.card}>
@@ -524,7 +524,7 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>交易赛排名</Text>
+          <Text style={styles.sectionTitle}>交易排名参考</Text>
           <Text style={styles.sectionMeta}>当前后端未加工该字段</Text>
         </View>
         <View style={styles.card}>
