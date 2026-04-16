@@ -1069,7 +1069,7 @@ export default function ChatScreen() {
                   const snapshot = item.card.payload.snapshot;
                   return (
                     <LinearGradient
-                      colors={["rgba(124,58,237,0.98)", "rgba(109,40,217,0.96)", "rgba(34,211,238,0.92)"]}
+                      colors={["rgba(15,23,42,0.98)", "rgba(31,41,55,0.96)", "rgba(110,91,255,0.84)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1123,7 +1123,7 @@ export default function ChatScreen() {
                   const assets = item.card.payload.assets;
                   return (
                     <LinearGradient
-                      colors={["rgba(255,255,255,0.98)", "rgba(244,240,255,0.96)"]}
+                      colors={["rgba(255,255,255,0.98)", "rgba(245,247,250,0.96)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.glassCard}
@@ -1170,7 +1170,7 @@ export default function ChatScreen() {
                   const defiCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(255,255,255,0.98)", "rgba(238,232,255,0.98)"]}
+                      colors={["rgba(255,255,255,0.98)", "rgba(244,246,250,0.98)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.glassCard}
@@ -1214,7 +1214,7 @@ export default function ChatScreen() {
                   const smartMoneyCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(17,24,39,0.98)", "rgba(91,33,182,0.96)", "rgba(124,58,237,0.94)"]}
+                      colors={["rgba(15,23,42,0.98)", "rgba(30,41,59,0.96)", "rgba(110,91,255,0.82)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1259,7 +1259,7 @@ export default function ChatScreen() {
                   const swapCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(17,24,39,0.98)", "rgba(76,29,149,0.96)", "rgba(34,211,238,0.9)"]}
+                      colors={["rgba(15,23,42,0.98)", "rgba(31,41,55,0.96)", "rgba(110,91,255,0.8)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1323,7 +1323,7 @@ export default function ChatScreen() {
                   const memeCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(255,255,255,0.98)", "rgba(243,232,255,0.98)", "rgba(237,233,254,0.96)"]}
+                      colors={["rgba(255,255,255,0.98)", "rgba(246,247,250,0.98)", "rgba(239,242,247,0.96)"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.glassCard}
@@ -1428,7 +1428,7 @@ export default function ChatScreen() {
                 ]}
               >
                 <LinearGradient
-                  colors={["#7C3AED", "#22D3EE"]}
+                  colors={["#111827", "#6E5BFF"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.sendButton}
