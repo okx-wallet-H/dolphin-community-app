@@ -529,7 +529,7 @@ export default function CommunityRoute() {
         </View>
         <View style={styles.card}>
           <View style={styles.rankingHeader}>
-            <MaterialCommunityIcons name="trophy-outline" size={22} color={PRIMARY} />
+            <MaterialCommunityIcons name="trophy-outline" size={22} color="#6B7280" />
             <Text style={styles.cardTitle}>OKX 交易赛排名</Text>
           </View>
           <Text style={styles.emptyText}>当前 strategy 接口仅纯透传已接入的 MCP 工具结果，未包含官方排名数据。</Text>
