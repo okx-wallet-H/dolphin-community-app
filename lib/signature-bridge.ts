@@ -37,6 +37,7 @@ export type PendingSignatureContext = {
     broadcastAddress?: string;
     routeLabel?: string;
     displayAmount?: string;
+    swapTransaction?: Record<string, unknown> | null;
   };
   transfer?: {
     amount: string;

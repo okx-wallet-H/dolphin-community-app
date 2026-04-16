@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,8 +36,12 @@ import {
   type StoredWalletSnapshot,
 } from "@/lib/_core/api";
 import {
+  buildSignatureCallbackUrl,
   clearPendingSignatureContext,
+  encodeSignatureContextId,
   getPendingSignatureContext,
+  savePendingSignatureContext,
+  type PendingSignatureContext,
 } from "@/lib/signature-bridge";
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
@@ -44,6 +49,11 @@ const EVM_NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const SOL_NATIVE = "So11111111111111111111111111111111111111112";
 const POSITIVE = "#16A34A";
 const NEGATIVE = "#DC2626";
+const SIGNATURE_PORTAL_URL = (
+  process.env.EXPO_PUBLIC_SIGNATURE_PORTAL_URL ??
+  process.env.EXPO_PUBLIC_OKX_WALLET_SIGN_URL ??
+  ""
+).trim();
 
 const chatFilterTabs = [
   { key: "all", label: "全部" },
@@ -85,6 +95,8 @@ type SwapCardPayload = {
   slippage: string;
   priceImpact: string;
   routeLabel: string;
+  requiresSignature?: boolean;
+  signatureRequest?: NonNullable<PendingSignatureContext["swap"]>;
   progress?: {
     key: string;
     label: string;
@@ -425,6 +437,8 @@ function buildSwapMessages(params: {
   slippage: string;
   priceImpact: string;
   routeLabel: string;
+  requiresSignature?: boolean;
+  signatureRequest?: NonNullable<PendingSignatureContext["swap"]>;
   progress?: {
     key: string;
     label: string;
@@ -442,6 +456,8 @@ function buildSwapMessages(params: {
     slippage,
     priceImpact,
     routeLabel,
+    requiresSignature,
+    signatureRequest,
     progress,
   } = params;
 
@@ -472,6 +488,8 @@ function buildSwapMessages(params: {
           slippage,
           priceImpact,
           routeLabel,
+          requiresSignature,
+          signatureRequest,
           progress,
         },
       },
@@ -769,6 +787,134 @@ export default function ChatScreen() {
     });
   }, []);
 
+  const startSignatureFlow = useCallback(
+    async (context: PendingSignatureContext, summary: { title: string; content: string }) => {
+      const encodedContextId = encodeSignatureContextId(context.id);
+      const callbackUrl = buildSignatureCallbackUrl({ ctx: encodedContextId });
+
+      await savePendingSignatureContext(context);
+
+      appendMessages([
+        {
+          id: `assistant-signature-launch-${context.id}`,
+          role: "assistant",
+          title: summary.title,
+          content: summary.content,
+          meta: SIGNATURE_PORTAL_URL
+            ? "已生成回调地址，正在打开外部钱包签名页。"
+            : "已生成签名回调地址，但当前环境尚未配置外部钱包签名入口。",
+          tone: SIGNATURE_PORTAL_URL ? "default" : "warning",
+        },
+      ]);
+
+      if (!SIGNATURE_PORTAL_URL) {
+        return;
+      }
+
+      const launchUrl = new URL(SIGNATURE_PORTAL_URL);
+      launchUrl.searchParams.set("flow", context.flow);
+      launchUrl.searchParams.set("chainKind", context.chainKind);
+      launchUrl.searchParams.set("ctx", encodedContextId);
+      launchUrl.searchParams.set("callbackUrl", callbackUrl);
+      launchUrl.searchParams.set(
+        "payload",
+        JSON.stringify(
+          context.flow === "swap"
+            ? {
+                amount: context.swap?.displayAmount || context.swap?.amount || "",
+                fromTokenSymbol: context.swap?.fromTokenSymbol || "",
+                toTokenSymbol: context.swap?.toTokenSymbol || "",
+                routeLabel: context.swap?.routeLabel || "",
+                swap: context.swap ?? null,
+              }
+            : {
+                transfer: context.transfer ?? null,
+              },
+        ),
+      );
+
+      try {
+        await Linking.openURL(launchUrl.toString());
+      } catch (launchError) {
+        appendMessages([
+          {
+            id: `assistant-signature-launch-error-${context.id}`,
+            role: "assistant",
+            title: "签名页暂未打开",
+            content:
+              launchError instanceof Error
+                ? launchError.message
+                : "已保存待签名上下文，但当前暂时无法打开外部钱包签名页。",
+            meta: "待签名上下文已保留，你可以在签名入口配置完成后再次发起。",
+            tone: "warning",
+          },
+        ]);
+      }
+    },
+    [appendMessages],
+  );
+
+  const handleTransferSignature = useCallback(
+    async (transferCard: TransferCardPayload) => {
+      const context: PendingSignatureContext = {
+        id: `transfer-sign-${Date.now()}`,
+        flow: "transfer",
+        chainKind: transferCard.chainKind,
+        createdAt: new Date().toISOString(),
+        source: "chat",
+        draftPrompt: `我正在处理 ${transferCard.amount} ${transferCard.symbol} 转账签名，请在返回后继续广播与回执承接。`,
+        progress: transferCard.progress,
+        transfer: {
+          amount: transferCard.amount,
+          symbol: transferCard.symbol,
+          fromAddress: transferCard.fromAddress,
+          toAddress: transferCard.toAddress,
+        },
+      };
+
+      await startSignatureFlow(context, {
+        title: "已准备转账签名",
+        content: `我已经为这笔 ${transferCard.amount} ${transferCard.symbol} 转账保存待续跑上下文，接下来会把你带到外部钱包签名页。`,
+      });
+    },
+    [startSignatureFlow],
+  );
+
+  const handleSwapSignature = useCallback(
+    async (swapCard: SwapCardPayload) => {
+      if (!swapCard.signatureRequest) {
+        appendMessages([
+          {
+            id: `assistant-swap-signature-missing-${Date.now()}`,
+            role: "assistant",
+            title: "待签名交易尚未准备完成",
+            content: "当前这张兑换卡片还没有拿到完整的待签名交易数据，请先重新获取报价或重新整理一次执行请求。",
+            meta: "需要同时具备待签名交易与完整兑换参数，才能进入签名回调续跑。",
+            tone: "warning",
+          },
+        ]);
+        return;
+      }
+
+      const context: PendingSignatureContext = {
+        id: `swap-sign-${Date.now()}`,
+        flow: "swap",
+        chainKind: swapCard.chainKind,
+        createdAt: new Date().toISOString(),
+        source: "chat",
+        draftPrompt: `我正在处理 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol} 的签名，请在返回后继续广播与订单查询。`,
+        progress: swapCard.progress,
+        swap: swapCard.signatureRequest,
+      };
+
+      await startSignatureFlow(context, {
+        title: "已准备兑换签名",
+        content: `我已经为这笔 ${swapCard.amount} ${swapCard.fromSymbol} → ${swapCard.toSymbol} 兑换保存待续跑上下文，接下来会把你带到外部钱包签名页。`,
+      });
+    },
+    [appendMessages, startSignatureFlow],
+  );
+
   const runSwapFlow = useCallback(
     async (content: string, wallet: StoredWalletSnapshot, seed: number) => {
       const parsed = await parseDexSwapIntent(content);
@@ -864,22 +1010,45 @@ export default function ChatScreen() {
         slippage,
         priceImpact,
         routeLabel,
+        requiresSignature: executeResult?.requiresSignature,
+        signatureRequest:
+          executeResult?.requiresSignature && executeResult.swapTransaction
+            ? {
+                chainIndex: fromToken.chainIndex,
+                amount: rawAmount,
+                fromTokenAddress: fromToken.address,
+                toTokenAddress: toToken.address,
+                userWalletAddress: walletAddress,
+                fromTokenSymbol: parsed.intent.fromSymbol,
+                toTokenSymbol: parsed.intent.toSymbol,
+                slippagePercent: slippage,
+                broadcastAddress: walletAddress,
+                routeLabel,
+                displayAmount: parsed.intent.amount,
+                swapTransaction: executeResult.swapTransaction,
+              }
+            : undefined,
         progress: executeResult?.progress,
       });
 
       if (executeResult) {
         const isSwapSettled = executeResult.status === "success";
+        const isAwaitingSignature = executeResult.requiresSignature || executeResult.status === "prepared";
         swapMessages.push({
           id: `assistant-${seed}-swap-receipt`,
           role: "assistant",
-          title: isSwapSettled ? "兑换执行回执" : "兑换处理状态",
-          content: isSwapSettled
-            ? `本次兑换已经进入完成回执阶段，订单号 ${executeResult.orderId}，你可以继续查看链上结果与成交细节。`
-            : `本次兑换已经提交至执行链路，订单号 ${executeResult.orderId}，当前仍在等待链上进一步确认。`,
-          tone: "success",
-          meta: executeResult.txHash
-            ? `链上回执：${executeResult.txHash}`
-            : "当前暂未返回链上回执，系统会在后续接入轮询后继续更新。",
+          title: isAwaitingSignature ? "兑换待签名状态" : isSwapSettled ? "兑换执行回执" : "兑换处理状态",
+          content: isAwaitingSignature
+            ? `本次兑换已经生成待签名交易，下一步请先完成钱包签名，再回到对话主线程继续广播与订单状态查询。`
+            : isSwapSettled
+              ? `本次兑换已经进入完成回执阶段，订单号 ${executeResult.orderId}，你可以继续查看链上结果与成交细节。`
+              : `本次兑换已经提交至执行链路，订单号 ${executeResult.orderId}，当前仍在等待链上进一步确认。`,
+          tone: isAwaitingSignature ? "warning" : "success",
+          meta: isAwaitingSignature
+            ? "当前已构建待签名交易，外部钱包签名入口已接入卡片动作按钮。"
+            : executeResult.txHash
+              ? `链上回执：${executeResult.txHash}`
+              : "当前暂未返回链上回执，系统会在后续接入轮询后继续更新。",
         });
       }
 
@@ -1651,7 +1820,9 @@ export default function ChatScreen() {
                       </View>
 
                       <Text style={styles.cardHelperTextOnDark}>
-                        提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。
+                        {swapCard.requiresSignature
+                          ? "当前已生成待签名交易，请先前往外部钱包完成签名，再回到主线程继续广播与订单回执查询。"
+                          : "提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。"}
                       </Text>
 
                       {swapCard.progress?.length ? (
@@ -1673,9 +1844,15 @@ export default function ChatScreen() {
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
                           <Text style={styles.secondaryActionText}>重新获取报价</Text>
                         </Pressable>
-                        <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                          <Text style={styles.primaryActionText}>先确认钱包余额</Text>
-                        </Pressable>
+                        {swapCard.requiresSignature && swapCard.signatureRequest ? (
+                          <Pressable style={styles.primaryAction} onPress={() => void handleSwapSignature(swapCard)}>
+                            <Text style={styles.primaryActionText}>去签名</Text>
+                          </Pressable>
+                        ) : (
+                          <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
+                            <Text style={styles.primaryActionText}>先确认钱包余额</Text>
+                          </Pressable>
+                        )}
                       </View>
                     </LinearGradient>
                   );
@@ -1746,8 +1923,8 @@ export default function ChatScreen() {
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`确认一下 ${transferCard.amount} ${transferCard.symbol} 转账条件`)}>
                           <Text style={styles.secondaryActionText}>继续确认条件</Text>
                         </Pressable>
-                        <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                          <Text style={styles.primaryActionText}>先确认钱包余额</Text>
+                        <Pressable style={styles.primaryAction} onPress={() => void handleTransferSignature(transferCard)}>
+                          <Text style={styles.primaryActionText}>发起签名</Text>
                         </Pressable>
                       </View>
                     </LinearGradient>
