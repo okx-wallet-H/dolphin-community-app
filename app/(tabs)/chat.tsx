@@ -1213,7 +1213,7 @@ export default function ChatScreen() {
                           <Text style={styles.secondaryActionLightText}>查看更多</Text>
                         </Pressable>
                         <Pressable style={styles.primaryAction} onPress={() => router.push("/(tabs)/earn")}>
-                          <Text style={styles.primaryActionText}>去申购</Text>
+                          <Text style={styles.primaryActionText}>继续确认申购</Text>
                         </Pressable>
                       </View>
                     </LinearGradient>
@@ -1319,10 +1319,10 @@ export default function ChatScreen() {
 
                       <View style={styles.cardActionRow}>
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
-                          <Text style={styles.secondaryActionText}>刷新报价</Text>
+                          <Text style={styles.secondaryActionText}>重新获取报价</Text>
                         </Pressable>
                         <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                          <Text style={styles.primaryActionText}>去钱包确认余额</Text>
+                          <Text style={styles.primaryActionText}>先确认钱包余额</Text>
                         </Pressable>
                       </View>
                     </LinearGradient>
