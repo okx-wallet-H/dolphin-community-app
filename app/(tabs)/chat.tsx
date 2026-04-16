@@ -802,10 +802,10 @@ export default function ChatScreen() {
         swapMessages.push({
           id: `assistant-${seed}-swap-receipt`,
           role: "assistant",
-          title: "兑换执行回执",
-          content: `兑换订单已提交，订单号 ${executeResult.orderId}，状态：${executeResult.status}。`,
+          title: "兑换执行状态",
+          content: `我已经提交兑换订单，当前订单号 ${executeResult.orderId}，执行状态为 ${executeResult.status}。`,
           tone: "success",
-          meta: executeResult.txHash ? `TxHash: ${executeResult.txHash}` : undefined,
+          meta: executeResult.txHash ? `链上回执：${executeResult.txHash}` : undefined,
         });
       }
 
