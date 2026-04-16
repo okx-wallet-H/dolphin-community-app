@@ -678,7 +678,7 @@ function buildMemeMessages(
 
 export default function ChatScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ draft?: string; draftKey?: string }>();
+  const params = useLocalSearchParams<{ draft?: string; draftKey?: string; q?: string; source?: string }>();
   const lastDraftKeyRef = useRef("");
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
@@ -937,13 +937,18 @@ export default function ChatScreen() {
   useEffect(() => {
     const draft = typeof params.draft === "string" ? params.draft.trim() : "";
     const draftKey = typeof params.draftKey === "string" ? params.draftKey : "";
-    if (!draft || !draftKey || lastDraftKeyRef.current === draftKey) {
+    const query = typeof params.q === "string" ? params.q.trim() : "";
+    const source = typeof params.source === "string" ? params.source : "";
+    const entryText = draft || query;
+    const entryKey = draftKey || (query ? `${source || "external"}:${query}` : "");
+
+    if (!entryText || !entryKey || lastDraftKeyRef.current === entryKey) {
       return;
     }
 
-    lastDraftKeyRef.current = draftKey;
-    void sendMessage(draft);
-  }, [params.draft, params.draftKey, sendMessage]);
+    lastDraftKeyRef.current = entryKey;
+    void sendMessage(entryText);
+  }, [params.draft, params.draftKey, params.q, params.source, sendMessage]);
 
   return (
     <ScreenContainer
