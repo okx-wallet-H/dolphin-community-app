@@ -709,9 +709,9 @@ export default function ChatScreen() {
           {
             id: `assistant-${seed}-swap-unknown`,
             role: "assistant",
-            title: "兑换识别失败",
+            title: "兑换信息还不完整",
             content:
-              "我识别到了你的兑换意图，但暂时没能提取出金额和币种。你可以试试“把 100 USDT 换成 ETH”这种说法。",
+              "我已经识别到你想发起兑换，但当前还缺少明确的金额或币种信息。你可以试试“把 100 USDT 换成 ETH”这种说法。",
             tone: "warning",
           },
         ] satisfies ChatMessage[];
@@ -724,8 +724,8 @@ export default function ChatScreen() {
           {
             id: `assistant-${seed}-swap-no-wallet`,
             role: "assistant",
-            title: "无法发起兑换",
-            content: "当前没有可用的钱包地址，请先完成登录并创建智能钱包。",
+            title: "当前还不能发起兑换",
+            content: "我已经理解你的兑换意图，但当前没有可用的钱包地址，请先完成登录并创建智能钱包。",
             tone: "danger",
           },
         ] satisfies ChatMessage[];
@@ -738,8 +738,8 @@ export default function ChatScreen() {
           {
             id: `assistant-${seed}-swap-token-miss`,
             role: "assistant",
-            title: "暂不支持的币种",
-            content: `当前已接入 ${chainKind === "solana" ? "SOL / USDT" : "ETH / USDT / BTC"} 的兑换链路。你输入的是 ${parsed.intent.fromSymbol} → ${parsed.intent.toSymbol}。如果需要更多币种，需要继续补充 OKX 代币映射。`,
+            title: "当前币种暂未接入",
+            content: `我已经识别到你输入的是 ${parsed.intent.fromSymbol} → ${parsed.intent.toSymbol}。当前已接入 ${chainKind === "solana" ? "SOL / USDT" : "ETH / USDT / BTC"} 的兑换链路；如果需要更多币种，还需要继续补充 OKX 代币映射。`,
             tone: "warning",
           },
         ] satisfies ChatMessage[];
@@ -924,10 +924,10 @@ export default function ChatScreen() {
           {
             id: `assistant-error-${Date.now()}`,
             role: "assistant",
-            title: "请求失败",
+            title: "当前请求未完成",
             content: message,
             tone: "danger",
-            meta: "请确认已登录钱包并检查网络状态",
+            meta: "请先确认已登录钱包，并检查网络或服务连接状态",
           },
         ]);
       } finally {
