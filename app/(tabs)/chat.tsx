@@ -13,7 +13,9 @@ import {
   View,
 } from "react-native";
 
+import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
+import { TopTabs } from "@/components/TopTabs";
 import {
   executeDexSwap,
   getAccountAssets,
@@ -37,6 +39,15 @@ const EVM_NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const SOL_NATIVE = "So11111111111111111111111111111111111111112";
 const POSITIVE = "#16A34A";
 const NEGATIVE = "#DC2626";
+
+const chatFilterTabs = [
+  { key: "all", label: "全部" },
+  { key: "favorite", label: "收藏" },
+  { key: "trade", label: "交易" },
+  { key: "data", label: "数据" },
+] as const;
+
+type ChatFilterKey = (typeof chatFilterTabs)[number]["key"];
 
 type PriceCardPayload = {
   snapshot: MarketSnapshot;
@@ -673,6 +684,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState("");
+  const [activeFilter, setActiveFilter] = useState<ChatFilterKey>("all");
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
 
   const walletHint = useMemo(() => {
@@ -935,10 +947,48 @@ export default function ChatScreen() {
 
   return (
     <ScreenContainer
-      className="px-5 pt-4 bg-[#FCFAFF]"
-      safeAreaClassName="bg-[#FCFAFF]"
-      containerClassName="bg-[#FCFAFF]"
+      className="bg-[#F5F5F7]"
+      safeAreaClassName="bg-[#F5F5F7]"
+      containerClassName="bg-[#F5F5F7]"
     >
+      <View style={styles.fixedHeaderWrap}>
+        <AppHeader
+          onWalletPress={() => router.push("/(tabs)/wallet")}
+          onRightPress={() => router.push("/(tabs)/profile")}
+          centerContent={
+            <TopTabs
+              activeTab="chat"
+              onChange={(tab) => {
+                if (tab === "community") {
+                  router.push("/(tabs)/community");
+                }
+              }}
+            />
+          }
+        />
+
+        <View style={styles.filterRow}>
+          {chatFilterTabs.map((filter) => {
+            const active = filter.key === activeFilter;
+            return (
+              <Pressable
+                key={filter.key}
+                onPress={() => setActiveFilter(filter.key)}
+                style={({ pressed }) => [
+                  styles.filterChip,
+                  active && styles.filterChipActive,
+                  pressed && styles.filterChipPressed,
+                ]}
+              >
+                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+                  {filter.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -947,61 +997,20 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={styles.headerBlock}>
-            <View style={styles.headingWrap}>
-              <View style={styles.titleRow}>
-                <Text style={styles.title}>AI 对话</Text>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusPillText}>默认首页</Text>
-                </View>
-              </View>
-              <Text style={styles.subtitle}>
-                作为默认首页，用自然语言让 H Wallet
-                帮你获取实时价格、发起兑换、生成赚币方案，或直接完成链上操作。
-              </Text>
-            </View>
-
             <LinearGradient
-              colors={["#FFFFFF", "#F7F3FF", "#EEE7FF"]}
+              colors={["rgba(255,255,255,0.98)", "rgba(244,241,255,0.96)", "rgba(237,242,255,0.94)"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.heroCard}
             >
               <View style={styles.heroInner}>
-                <Text style={styles.heroEyebrow}>对话即入口</Text>
-                <Text style={styles.heroTitle}>一句话获得可执行结果</Text>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusPillText}>Agent 对话主线程</Text>
+                </View>
+                <Text style={styles.heroTitle}>在聊天里完成理解、决策与执行</Text>
                 <Text style={styles.heroDescription}>{walletHint}</Text>
               </View>
             </LinearGradient>
-
-            <View style={styles.quickNavRow}>
-              <Pressable
-                style={styles.quickNavCard}
-                onPress={() => router.push("/(tabs)/wallet")}
-              >
-                <Text style={styles.quickNavTitle}>查看钱包资产</Text>
-                <Text style={styles.quickNavDesc}>
-                  回到资产页核对余额和代币明细。
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.quickNavCard}
-                onPress={() => router.push("/(tabs)/earn")}
-              >
-                <Text style={styles.quickNavTitle}>去赚币页</Text>
-                <Text style={styles.quickNavDesc}>
-                  查看策略选择与自动赚币回执。
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.quickNavCard}
-                onPress={() => router.push("/(tabs)/wallet")}
-              >
-                <Text style={styles.quickNavTitle}>返回资产总览</Text>
-                <Text style={styles.quickNavDesc}>
-                  回到主资产页，验证登录后的主路径跳转是否顺畅。
-                </Text>
-              </Pressable>
-            </View>
 
             <FlatList
               horizontal
@@ -1358,14 +1367,45 @@ export default function ChatScreen() {
           );
         }}
         ListFooterComponent={
-          <View style={styles.footerComposer}>
-            <Text style={styles.composerLabel}>输入区</Text>
-            <Text style={styles.composerHint}>
-              例如：帮我查一下 ETH 最新价格；把 100 USDT 换成 ETH；转 20 USDT
-              到某个地址；或者给我一个低波动赚币方案。
-            </Text>
+          <View style={styles.footerComposerWrap}>
+            <View style={styles.quickNavRow}>
+              <Pressable
+                style={styles.quickNavCard}
+                onPress={() => router.push("/(tabs)/wallet")}
+              >
+                <Text style={styles.quickNavTitle}>查看钱包资产</Text>
+                <Text style={styles.quickNavDesc}>
+                  回到资产页核对余额和代币明细。
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.quickNavCard}
+                onPress={() => router.push("/(tabs)/earn")}
+              >
+                <Text style={styles.quickNavTitle}>去赚币页</Text>
+                <Text style={styles.quickNavDesc}>
+                  查看策略选择与自动赚币回执。
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.quickNavCard}
+                onPress={() => router.push("/(tabs)/wallet")}
+              >
+                <Text style={styles.quickNavTitle}>返回资产总览</Text>
+                <Text style={styles.quickNavDesc}>
+                  回到主资产页，验证登录后的主路径跳转是否顺畅。
+                </Text>
+              </Pressable>
+            </View>
 
-            <View style={styles.composerRow}>
+            <View style={styles.footerComposer}>
+              <Text style={styles.composerLabel}>输入区</Text>
+              <Text style={styles.composerHint}>
+                例如：帮我查一下 ETH 最新价格；把 100 USDT 换成 ETH；转 20 USDT
+                到某个地址；或者给我一个低波动赚币方案。
+              </Text>
+
+              <View style={styles.composerRow}>
               <View style={styles.inputWrap}>
                 <TextInput
                   value={input}
@@ -1402,9 +1442,10 @@ export default function ChatScreen() {
               </Pressable>
             </View>
 
-            {errorText ? (
-              <Text style={styles.errorText}>{errorText}</Text>
-            ) : null}
+              {errorText ? (
+                <Text style={styles.errorText}>{errorText}</Text>
+              ) : null}
+            </View>
           </View>
         }
       />
@@ -1413,13 +1454,56 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
+  fixedHeaderWrap: {
+    backgroundColor: "#F5F5F7",
+    paddingTop: 4,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(15,23,42,0.05)",
+    gap: 8,
+  },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingHorizontal: 20,
+  },
+  filterChip: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.06)",
+  },
+  filterChipActive: {
+    backgroundColor: "#111827",
+    borderColor: "#111827",
+  },
+  filterChipPressed: {
+    opacity: 0.88,
+  },
+  filterChipText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    color: "#667085",
+  },
+  filterChipTextActive: {
+    color: "#FFFFFF",
+  },
   contentContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 150,
-    backgroundColor: "#FCFAFF",
+    backgroundColor: "#F5F5F7",
   },
   headerBlock: {
     marginBottom: 24,
-    gap: 18,
+    gap: 16,
     width: "100%",
   },
   headingWrap: {
@@ -1438,18 +1522,19 @@ const styles = StyleSheet.create({
     color: "#1A1A2E",
   },
   statusPill: {
+    alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(124,58,237,0.14)",
+    backgroundColor: "rgba(17,24,39,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.22)",
+    borderColor: "rgba(15,23,42,0.05)",
   },
   statusPillText: {
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
-    color: "#6D28D9",
+    color: "#475467",
   },
   subtitle: {
     fontSize: 14,
@@ -1461,11 +1546,11 @@ const styles = StyleSheet.create({
     padding: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.14)",
-    backgroundColor: "rgba(255,255,255,0.88)",
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
+    borderColor: "rgba(15,23,42,0.06)",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.06,
     shadowRadius: 24,
     elevation: 4,
   },
@@ -1479,15 +1564,16 @@ const styles = StyleSheet.create({
     color: "#666C85",
   },
   heroTitle: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: "800",
-    color: "#1A1A2E",
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "700",
+    letterSpacing: -0.5,
+    color: "#111827",
   },
   heroDescription: {
     fontSize: 14,
     lineHeight: 22,
-    color: "#31324A",
+    color: "#475467",
   },
   quickNavRow: {
     flexDirection: "column",
@@ -1528,9 +1614,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "rgba(245,243,255,0.92)",
+    backgroundColor: "rgba(255,255,255,0.86)",
     borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.14)",
+    borderColor: "rgba(15,23,42,0.06)",
   },
   suggestionChipPressed: {
     opacity: 0.82,
@@ -1539,7 +1625,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "600",
-    color: "#5B3EC8",
+    color: "#344054",
   },
   bubbleRow: {
     marginBottom: 12,
@@ -1909,14 +1995,22 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#7C3AED",
   },
+  footerComposerWrap: {
+    marginTop: 8,
+    gap: 16,
+  },
   footerComposer: {
-    marginTop: 16,
     borderRadius: 28,
     padding: 18,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "rgba(255,255,255,0.92)",
     borderWidth: 1,
-    borderColor: "#E8EAF2",
+    borderColor: "rgba(15,23,42,0.06)",
     gap: 10,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 3,
   },
   composerLabel: {
     fontSize: 13,
@@ -1940,9 +2034,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     minHeight: 112,
     borderRadius: 22,
-    backgroundColor: "#FAF7FF",
+    backgroundColor: "#F9FAFB",
     borderWidth: 1,
-    borderColor: "#DDD6FE",
+    borderColor: "rgba(15,23,42,0.06)",
     paddingHorizontal: 14,
     paddingVertical: 12,
   },

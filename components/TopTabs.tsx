@@ -49,9 +49,9 @@ export function TopTabs({ activeTab, onChange }: Props) {
 
 const styles = StyleSheet.create({
   outer: {
-    paddingHorizontal: ManusSpacing.page,
-    paddingTop: ManusSpacing.xs,
-    paddingBottom: ManusSpacing.md,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "transparent",
   },
   wrapper: {
