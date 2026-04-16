@@ -799,13 +799,18 @@ export default function ChatScreen() {
       });
 
       if (executeResult) {
+        const isSwapSettled = executeResult.status === "success";
         swapMessages.push({
           id: `assistant-${seed}-swap-receipt`,
           role: "assistant",
-          title: "兑换执行状态",
-          content: `我已经提交兑换订单，当前订单号 ${executeResult.orderId}，执行状态为 ${executeResult.status}。`,
+          title: isSwapSettled ? "兑换执行回执" : "兑换处理状态",
+          content: isSwapSettled
+            ? `本次兑换已经进入完成回执阶段，订单号 ${executeResult.orderId}，你可以继续查看链上结果与成交细节。`
+            : `本次兑换已经提交至执行链路，订单号 ${executeResult.orderId}，当前仍在等待链上进一步确认。`,
           tone: "success",
-          meta: executeResult.txHash ? `链上回执：${executeResult.txHash}` : undefined,
+          meta: executeResult.txHash
+            ? `链上回执：${executeResult.txHash}`
+            : "当前暂未返回链上回执，系统会在后续接入轮询后继续更新。",
         });
       }
 
