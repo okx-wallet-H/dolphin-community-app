@@ -332,7 +332,7 @@ export default function CommunityRoute() {
           <Text style={styles.searchHint}>搜代币、合约、地址，社区页顶部统一入口已切换为搜索框。</Text>
         </View>
 
-        <LinearGradient colors={["#FFFFFF", "#F7F3FF", "#EFE7FF"]} style={styles.heroCard}>
+        <LinearGradient colors={["rgba(255,255,255,0.98)", "rgba(246,247,250,0.98)", "rgba(239,242,247,0.96)"]} style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <View>
               <Text style={styles.heroEyebrow}>社区探索</Text>
