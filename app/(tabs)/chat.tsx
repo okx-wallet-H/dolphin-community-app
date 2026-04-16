@@ -1069,11 +1069,13 @@ export default function ChatScreen() {
 
   useEffect(() => {
     const contextId = typeof params.sigContextId === "string" ? params.sigContextId : "";
+    const flow = params.sigFlow === "transfer" ? "transfer" : "swap";
     const signedTx = typeof params.sigSignedTx === "string" ? params.sigSignedTx : "";
     const jitoSignedTx = typeof params.sigJitoSignedTx === "string" ? params.sigJitoSignedTx : "";
+    const txHash = typeof params.sigTxHash === "string" ? params.sigTxHash : "";
     const status = typeof params.sigStatus === "string" ? params.sigStatus : "returned";
     const error = typeof params.sigError === "string" ? params.sigError : "";
-    const resumeKey = contextId ? `${contextId}:${status}:${signedTx || jitoSignedTx || error}` : "";
+    const resumeKey = contextId ? `${contextId}:${flow}:${status}:${txHash || signedTx || jitoSignedTx || error}` : "";
 
     if (
       !isFromSignatureCallback ||
@@ -1196,12 +1198,73 @@ export default function ChatScreen() {
       }
     };
 
-    void resumeSignedSwap();
+    const resumeSignedTransfer = async () => {
+      const pending = await getPendingSignatureContext();
+      if (!active || !pending || pending.id !== contextId || pending.flow !== "transfer" || !pending.transfer) {
+        return;
+      }
+
+      const inferredChainKind: DexChainKind = pending.transfer.toAddress.startsWith("0x") ? "evm" : "solana";
+      const transferProgress = [
+        { key: "prepare", label: "已整理转账请求", status: "done" as const },
+        { key: "sign", label: "签名结果已返回", status: "done" as const },
+        {
+          key: "broadcast",
+          label: txHash ? "已记录链上回执，等待确认" : "广播能力待接入",
+          status: txHash ? ("done" as const) : ("pending" as const),
+        },
+      ];
+
+      appendMessages([
+        {
+          id: `assistant-signature-${resumeKey}-transfer-resume-start`,
+          role: "assistant",
+          title: "已进入转账续跑",
+          content: txHash
+            ? "我已经收到这笔转账的签名结果与链上回执，正在把结果承接回对话主线程。"
+            : "我已经拿到你刚刚签好的转账交易，正在恢复主线程并更新当前执行阶段。",
+          meta: txHash
+            ? `链上回执：${txHash}`
+            : "当前真实转账广播接口尚未接入，先以主线程状态承接本次签名结果",
+          tone: txHash ? "success" : "default",
+        },
+        {
+          id: `assistant-signature-${resumeKey}-transfer-resume-result`,
+          role: "assistant",
+          title: txHash ? "转账签名结果已记录" : "转账已恢复到待广播阶段",
+          content: txHash
+            ? `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经回传链上回执，我已先在主线程记录本次结果，后续会继续接上更完整的确认状态更新。`
+            : `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经完成签名回传，我已先将执行进度更新为“已签名、待广播”。由于当前仍缺少统一广播接口，我会把真实广播接入登记为下一步开发项。`,
+          meta: `${maskAddress(pending.transfer.fromAddress)} → ${maskAddress(pending.transfer.toAddress)}`,
+          tone: txHash ? "success" : "warning",
+          card: {
+            kind: "transfer",
+            payload: {
+              amount: pending.transfer.amount,
+              symbol: pending.transfer.symbol,
+              chainKind: inferredChainKind,
+              fromAddress: pending.transfer.fromAddress,
+              toAddress: pending.transfer.toAddress,
+              status: txHash ? "broadcasted" : "prepared",
+              progress: transferProgress,
+            },
+          },
+        },
+      ]);
+
+      await clearPendingSignatureContext();
+    };
+
+    if (flow === "transfer") {
+      void resumeSignedTransfer();
+    } else {
+      void resumeSignedSwap();
+    }
 
     return () => {
       active = false;
     };
-  }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus]);
+  }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigFlow, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus, params.sigTxHash]);
 
   useEffect(() => {
     const draft = typeof params.draft === "string" ? params.draft.trim() : "";
