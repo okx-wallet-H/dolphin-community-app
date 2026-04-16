@@ -80,6 +80,11 @@ type SwapCardPayload = {
   slippage: string;
   priceImpact: string;
   routeLabel: string;
+  progress?: {
+    key: string;
+    label: string;
+    status: "done" | "pending";
+  }[];
 };
 
 type ChatCard =
@@ -397,6 +402,11 @@ function buildSwapMessages(params: {
   slippage: string;
   priceImpact: string;
   routeLabel: string;
+  progress?: {
+    key: string;
+    label: string;
+    status: "done" | "pending";
+  }[];
 }): ChatMessage[] {
   const {
     amount,
@@ -409,6 +419,7 @@ function buildSwapMessages(params: {
     slippage,
     priceImpact,
     routeLabel,
+    progress,
   } = params;
 
   return [
@@ -438,6 +449,7 @@ function buildSwapMessages(params: {
           slippage,
           priceImpact,
           routeLabel,
+          progress,
         },
       },
     },
@@ -796,6 +808,7 @@ export default function ChatScreen() {
         slippage,
         priceImpact,
         routeLabel,
+        progress: executeResult?.progress,
       });
 
       if (executeResult) {
@@ -1330,6 +1343,21 @@ export default function ChatScreen() {
                         提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。
                       </Text>
 
+                      {swapCard.progress?.length ? (
+                        <View style={styles.swapProgressPanel}>
+                          <Text style={styles.swapProgressTitle}>执行链路进度</Text>
+                          {swapCard.progress.map((step) => (
+                            <View key={step.key} style={styles.swapProgressRow}>
+                              <View style={[styles.swapProgressDot, step.status === "done" ? styles.swapProgressDotDone : styles.swapProgressDotPending]} />
+                              <Text style={styles.swapProgressLabel}>{step.label}</Text>
+                              <Text style={[styles.swapProgressStatus, step.status === "done" ? styles.swapProgressStatusDone : styles.swapProgressStatusPending]}>
+                                {step.status === "done" ? "已完成" : "进行中"}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      ) : null}
+
                       <View style={styles.cardActionRow}>
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
                           <Text style={styles.secondaryActionText}>重新获取报价</Text>
@@ -1830,6 +1858,55 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: "rgba(255,255,255,0.76)",
+  },
+  swapProgressPanel: {
+    marginTop: 4,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 12,
+    gap: 8,
+  },
+  swapProgressTitle: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+    color: "rgba(255,255,255,0.72)",
+  },
+  swapProgressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  swapProgressDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  swapProgressDotDone: {
+    backgroundColor: "#E5E7EB",
+  },
+  swapProgressDotPending: {
+    backgroundColor: "rgba(255,255,255,0.38)",
+  },
+  swapProgressLabel: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.88)",
+  },
+  swapProgressStatus: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  swapProgressStatusDone: {
+    color: "#F8FAFC",
+  },
+  swapProgressStatusPending: {
+    color: "rgba(255,255,255,0.62)",
   },
   primaryAction: {
     flex: 1,
