@@ -88,7 +88,20 @@ export default function SignCallbackScreen() {
       setMessage(text);
     };
 
-    const finishSuccess = (text: string, draft: string, draftKey: string) => {
+    const finishSuccess = (
+      text: string,
+      draft: string,
+      draftKey: string,
+      signatureParams: {
+        sigContextId: string;
+        sigFlow: "swap" | "transfer";
+        sigStatus: string;
+        sigSignedTx?: string | null;
+        sigJitoSignedTx?: string | null;
+        sigTxHash?: string | null;
+        sigError?: string | null;
+      },
+    ) => {
       if (!active) return;
       setStatus("success");
       setMessage(text);
@@ -99,6 +112,13 @@ export default function SignCallbackScreen() {
             draft,
             draftKey,
             source: "signature-callback",
+            sigContextId: signatureParams.sigContextId,
+            sigFlow: signatureParams.sigFlow,
+            sigStatus: signatureParams.sigStatus,
+            sigSignedTx: signatureParams.sigSignedTx ?? undefined,
+            sigJitoSignedTx: signatureParams.sigJitoSignedTx ?? undefined,
+            sigTxHash: signatureParams.sigTxHash ?? undefined,
+            sigError: signatureParams.sigError ?? undefined,
           },
         });
       }, 900);
@@ -169,6 +189,15 @@ export default function SignCallbackScreen() {
               : "签名结果已接收，正在恢复对话主线程...",
           draft,
           draftKey,
+          {
+            sigContextId: pending.id,
+            sigFlow: pending.flow,
+            sigStatus: payload.status || "returned",
+            sigSignedTx: payload.signedTx,
+            sigJitoSignedTx: payload.jitoSignedTx,
+            sigTxHash: payload.txHash,
+            sigError: payload.error,
+          },
         );
       } catch (error) {
         finishError(error instanceof Error ? error.message : "签名回调处理失败，请返回聊天页重试。");

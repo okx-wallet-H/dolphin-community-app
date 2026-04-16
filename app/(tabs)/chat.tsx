@@ -726,8 +726,21 @@ function buildMemeMessages(
 
 export default function ChatScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ draft?: string; draftKey?: string; q?: string; source?: string }>();
+  const params = useLocalSearchParams<{
+    draft?: string;
+    draftKey?: string;
+    q?: string;
+    source?: string;
+    sigContextId?: string;
+    sigFlow?: "swap" | "transfer";
+    sigStatus?: string;
+    sigSignedTx?: string;
+    sigJitoSignedTx?: string;
+    sigTxHash?: string;
+    sigError?: string;
+  }>();
   const lastDraftKeyRef = useRef("");
+  const lastSignatureKeyRef = useRef("");
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -737,6 +750,7 @@ export default function ChatScreen() {
 
   const incomingQuery = typeof params.q === "string" ? params.q.trim() : "";
   const isFromCommunity = params.source === "community" && incomingQuery.length > 0;
+  const isFromSignatureCallback = params.source === "signature-callback";
 
   const walletHint = useMemo(() => {
     return "支持查询实时行情、赚币产品、钱包资产、聪明钱、Meme 扫描，以及基于钱包地址发起真实兑换链路。";
@@ -990,6 +1004,62 @@ export default function ChatScreen() {
     },
     [appendMessages, input, runSwapFlow, submitting],
   );
+
+  useEffect(() => {
+    const contextId = typeof params.sigContextId === "string" ? params.sigContextId : "";
+    const flow = params.sigFlow === "transfer" ? "transfer" : "swap";
+    const status = typeof params.sigStatus === "string" ? params.sigStatus : "returned";
+    const signedTx = typeof params.sigSignedTx === "string" ? params.sigSignedTx : "";
+    const jitoSignedTx = typeof params.sigJitoSignedTx === "string" ? params.sigJitoSignedTx : "";
+    const txHash = typeof params.sigTxHash === "string" ? params.sigTxHash : "";
+    const error = typeof params.sigError === "string" ? params.sigError : "";
+    const signatureKey = contextId ? `${contextId}:${status}:${txHash || signedTx || jitoSignedTx || error}` : "";
+
+    if (!isFromSignatureCallback || !signatureKey || lastSignatureKeyRef.current === signatureKey) {
+      return;
+    }
+
+    lastSignatureKeyRef.current = signatureKey;
+
+    const flowLabel = flow === "transfer" ? "转账" : "兑换";
+    const assistantMessages: ChatMessage[] = [];
+
+    assistantMessages.push({
+      id: `assistant-signature-${signatureKey}-entry`,
+      role: "assistant",
+      title: `${flowLabel}签名结果已返回`,
+      content:
+        status === "cancelled"
+          ? `我已经收到你刚刚取消的${flowLabel}签名结果。当前不会继续广播，我会先回到对话主线程，帮你重新检查条件与风险。`
+          : status === "error" || error
+            ? `我已经收到${flowLabel}签名回传异常，当前先不继续执行。你可以继续让我复核条件，或者稍后重新发起。`
+            : `我已经接住这次${flowLabel}签名结果，并已恢复到对话主线程。下一步会继续往广播与链上回执方向承接。`,
+      meta: txHash
+        ? `当前回执：${txHash}`
+        : signedTx || jitoSignedTx
+          ? "已接收到签名结果，广播续跑能力正在接入中"
+          : "当前仅完成回调承接，后续会继续接上广播续跑与订单状态更新",
+      tone: status === "error" || error ? "danger" : status === "cancelled" ? "warning" : "success",
+    });
+
+    if (status !== "cancelled") {
+      assistantMessages.push({
+        id: `assistant-signature-${signatureKey}-progress`,
+        role: "assistant",
+        title: `${flowLabel}主线程续跑状态`,
+        content:
+          status === "error" || error
+            ? `本次${flowLabel}签名结果已被记录，但当前回调阶段返回了异常信息：${error || "未知错误"}。建议先重新核对参数后再继续。`
+            : signedTx || jitoSignedTx
+              ? `当前已经收到签名结果，下一步应继续把已签名交易送入广播链路，并在对话中持续更新订单与回执状态。`
+              : `当前应用已经成功接住回调，但尚未收到完整签名载荷；后续将继续补齐签名桥接与广播续跑。`,
+        meta: signedTx || jitoSignedTx ? `签名载荷：${signedTx ? "signedTx" : "jitoSignedTx"} 已返回` : undefined,
+        tone: status === "error" || error ? "warning" : "default",
+      });
+    }
+
+    appendMessages(assistantMessages);
+  }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigFlow, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus, params.sigTxHash]);
 
   useEffect(() => {
     const draft = typeof params.draft === "string" ? params.draft.trim() : "";
