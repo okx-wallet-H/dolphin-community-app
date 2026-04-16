@@ -33,6 +33,10 @@ import {
   type MarketSnapshot,
   type StoredWalletSnapshot,
 } from "@/lib/_core/api";
+import {
+  clearPendingSignatureContext,
+  getPendingSignatureContext,
+} from "@/lib/signature-bridge";
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
 const EVM_NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
@@ -741,6 +745,7 @@ export default function ChatScreen() {
   }>();
   const lastDraftKeyRef = useRef("");
   const lastSignatureKeyRef = useRef("");
+  const lastSignatureResumeKeyRef = useRef("");
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1060,6 +1065,102 @@ export default function ChatScreen() {
 
     appendMessages(assistantMessages);
   }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigFlow, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus, params.sigTxHash]);
+
+  useEffect(() => {
+    const contextId = typeof params.sigContextId === "string" ? params.sigContextId : "";
+    const signedTx = typeof params.sigSignedTx === "string" ? params.sigSignedTx : "";
+    const jitoSignedTx = typeof params.sigJitoSignedTx === "string" ? params.sigJitoSignedTx : "";
+    const status = typeof params.sigStatus === "string" ? params.sigStatus : "returned";
+    const error = typeof params.sigError === "string" ? params.sigError : "";
+    const resumeKey = contextId ? `${contextId}:${status}:${signedTx || jitoSignedTx || error}` : "";
+
+    if (
+      !isFromSignatureCallback ||
+      !contextId ||
+      !resumeKey ||
+      lastSignatureResumeKeyRef.current === resumeKey ||
+      status === "cancelled" ||
+      status === "error" ||
+      error ||
+      (!signedTx && !jitoSignedTx)
+    ) {
+      return;
+    }
+
+    lastSignatureResumeKeyRef.current = resumeKey;
+
+    let active = true;
+
+    const resumeSignedSwap = async () => {
+      const pending = await getPendingSignatureContext();
+      if (!active || !pending || pending.id !== contextId || pending.flow !== "swap" || !pending.swap) {
+        return;
+      }
+
+      appendMessages([
+        {
+          id: `assistant-signature-${resumeKey}-resume-start`,
+          role: "assistant",
+          title: "已进入广播续跑",
+          content: "我已经拿到你刚刚签好的兑换交易，正在继续执行广播与订单回执查询。",
+          meta: "当前会沿用之前已整理好的兑换参数继续处理",
+          tone: "default",
+        },
+      ]);
+
+      try {
+        const executeResult = await executeDexSwap({
+          ...pending.swap,
+          signedTx: signedTx || undefined,
+          jitoSignedTx: jitoSignedTx || undefined,
+        });
+
+        if (!active) return;
+
+        appendMessages([
+          {
+            id: `assistant-signature-${resumeKey}-resume-result`,
+            role: "assistant",
+            title: executeResult.status === "success" ? "兑换已进入完成回执" : "兑换已继续执行",
+            content:
+              executeResult.status === "success"
+                ? `我已经继续完成这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，你可以继续查看链上结果与成交细节。`
+                : `我已经继续广播这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，后续会继续等待链上结果更新。`,
+            meta: executeResult.txHash
+              ? `链上回执：${executeResult.txHash}`
+              : executeResult.progress?.length
+                ? executeResult.progress.map((item) => `${item.label}：${item.status === "done" ? "完成" : "处理中"}`).join(" · ")
+                : "当前暂未返回链上回执，后续会继续补齐订单轮询。",
+            tone: executeResult.status === "success" ? "success" : "default",
+          },
+        ]);
+
+        await clearPendingSignatureContext();
+      } catch (resumeError) {
+        if (!active) return;
+
+        appendMessages([
+          {
+            id: `assistant-signature-${resumeKey}-resume-error`,
+            role: "assistant",
+            title: "广播续跑暂未完成",
+            content:
+              resumeError instanceof Error
+                ? resumeError.message
+                : "已收到签名结果，但广播续跑暂未完成，请稍后重试。",
+            meta: "当前已保留待续跑上下文，后续仍可继续补执行恢复能力",
+            tone: "warning",
+          },
+        ]);
+      }
+    };
+
+    void resumeSignedSwap();
+
+    return () => {
+      active = false;
+    };
+  }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus]);
 
   useEffect(() => {
     const draft = typeof params.draft === "string" ? params.draft.trim() : "";

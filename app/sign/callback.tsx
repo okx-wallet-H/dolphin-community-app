@@ -179,7 +179,11 @@ export default function SignCallbackScreen() {
         });
 
         const draftKey = `signature:${pending.id}:${payload.status || "returned"}`;
-        await clearPendingSignatureContext();
+        const shouldClearPendingContext =
+          payload.status === "cancelled" || payload.status === "error" || Boolean(payload.error);
+        if (shouldClearPendingContext) {
+          await clearPendingSignatureContext();
+        }
 
         finishSuccess(
           payload.status === "cancelled"
