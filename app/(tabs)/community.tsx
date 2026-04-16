@@ -335,8 +335,8 @@ export default function CommunityRoute() {
         <LinearGradient colors={["rgba(255,255,255,0.98)", "rgba(246,247,250,0.98)", "rgba(239,242,247,0.96)"]} style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <View>
-              <Text style={styles.heroEyebrow}>社区探索</Text>
-              <Text style={styles.heroTitle}>在一个入口里搜索代币、合约与地址</Text>
+              <Text style={styles.heroEyebrow}>社区对话入口</Text>
+              <Text style={styles.heroTitle}>在发现策略之前，先让 Agent 理解你的目标</Text>
             </View>
             <View style={[styles.statusBadge, { backgroundColor: `${statusColor}18` }]}>
               <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -344,7 +344,7 @@ export default function CommunityRoute() {
             </View>
           </View>
           <Text style={styles.heroDesc}>
-            搜索框负责统一承接社区探索入口，下方继续保留真实策略与交易数据卡片，方便边搜边看链上动态。
+            社区页不再只是检索入口，而是承接“发现机会、理解策略、进入对话执行”的前置场景，下方继续保留真实策略与交易数据卡片作为判断依据。
           </Text>
           <View style={styles.metricRow}>
             <View style={styles.metricCard}>
