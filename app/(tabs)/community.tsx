@@ -865,12 +865,12 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: PRIMARY_LIGHT,
+    backgroundColor: "rgba(15,23,42,0.05)",
     alignItems: "center",
     justifyContent: "center",
   },
   assetIconText: {
-    color: PRIMARY,
+    color: "#334155",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -941,7 +941,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 999,
-    backgroundColor: PRIMARY,
+    backgroundColor: "rgba(15,23,42,0.22)",
     marginTop: 5,
   },
   logContent: {
