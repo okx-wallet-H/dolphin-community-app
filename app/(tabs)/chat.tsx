@@ -1438,7 +1438,7 @@ export default function ChatScreen() {
                 ]}
               >
                 <LinearGradient
-                  colors={["#111827", "#6E5BFF"]}
+                  colors={["#111827", "#1F2937"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.sendButton}
@@ -2066,6 +2066,11 @@ const styles = StyleSheet.create({
   sendButtonWrap: {
     borderRadius: 22,
     overflow: "hidden",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.10,
+    shadowRadius: 16,
+    elevation: 3,
   },
   sendButtonPressed: {
     opacity: 0.9,
