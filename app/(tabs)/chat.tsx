@@ -87,6 +87,20 @@ type SwapCardPayload = {
   }[];
 };
 
+type TransferCardPayload = {
+  amount: string;
+  symbol: string;
+  chainKind: DexChainKind;
+  fromAddress: string;
+  toAddress: string;
+  status: "prepared" | "broadcasted" | "success";
+  progress: {
+    key: string;
+    label: string;
+    status: "done" | "pending";
+  }[];
+};
+
 type ChatCard =
   | {
       kind: "price";
@@ -111,6 +125,10 @@ type ChatCard =
   | {
       kind: "swap";
       payload: SwapCardPayload;
+    }
+  | {
+      kind: "transfer";
+      payload: TransferCardPayload;
     };
 
 type ChatMessage = {
@@ -462,6 +480,12 @@ function buildTransferMessages(
   seed: number,
 ): ChatMessage[] {
   const fromAddress = getPrimaryWalletAddress(wallet, intent.chainKind);
+  const progress = [
+    { key: "prepare", label: "已整理转账请求", status: "done" as const },
+    { key: "sign", label: "等待签名确认", status: "pending" as const },
+    { key: "broadcast", label: "等待广播交易", status: "pending" as const },
+  ];
+
   return [
     {
       id: `assistant-${seed}-transfer-intent`,
@@ -476,7 +500,19 @@ function buildTransferMessages(
       title: "转账准备状态",
       content: `我已经整理好本次转账所需的关键信息，当前可以先由你确认执行条件。\n发送地址：${maskAddress(fromAddress)}\n接收地址：${maskAddress(intent.address)}\n金额：${intent.amount} ${intent.symbol}`,
       tone: "warning",
-      meta: "当前仍是待广播状态，后续接入真实链上广播后即可直接执行。",
+      meta: "当前仍是待广播状态，下一步将补签名回传与链上广播承接。",
+      card: {
+        kind: "transfer",
+        payload: {
+          amount: intent.amount,
+          symbol: intent.symbol,
+          chainKind: intent.chainKind,
+          fromAddress,
+          toAddress: intent.address,
+          status: "prepared",
+          progress,
+        },
+      },
     },
   ];
 }
@@ -1361,6 +1397,79 @@ export default function ChatScreen() {
                       <View style={styles.cardActionRow}>
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
                           <Text style={styles.secondaryActionText}>重新获取报价</Text>
+                        </Pressable>
+                        <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
+                          <Text style={styles.primaryActionText}>先确认钱包余额</Text>
+                        </Pressable>
+                      </View>
+                    </LinearGradient>
+                  );
+                })() : null}
+
+                {item.card?.kind === "transfer" ? (() => {
+                  const transferCard = item.card.payload;
+                  return (
+                    <LinearGradient
+                      colors={["rgba(15,23,42,0.98)", "rgba(31,41,55,0.96)", "rgba(92,109,140,0.82)"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.richCard}
+                    >
+                      <View style={styles.cardHeaderRow}>
+                        <View style={styles.cardIconWrap}>
+                          <MaterialCommunityIcons name="send-circle-outline" size={20} color="#FFFFFF" />
+                        </View>
+                        <View style={styles.cardHeaderTextWrap}>
+                          <Text style={styles.cardEyebrow}>转账执行准备</Text>
+                          <Text style={styles.cardTitle}>{transferCard.amount} {transferCard.symbol}</Text>
+                        </View>
+                        <View style={styles.badgeWrap}>
+                          <Text style={[styles.badgeText, { color: "#BFDBFE" }]}>
+                            {transferCard.chainKind === "solana" ? "Solana" : "Ethereum"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text style={styles.priceValue}>{transferCard.amount} {transferCard.symbol}</Text>
+
+                      <View style={styles.metricGrid}>
+                        <View style={styles.metricCell}>
+                          <Text style={styles.metricLabel}>发送地址</Text>
+                          <Text style={styles.metricValue}>{maskAddress(transferCard.fromAddress)}</Text>
+                        </View>
+                        <View style={styles.metricCell}>
+                          <Text style={styles.metricLabel}>接收地址</Text>
+                          <Text style={styles.metricValue}>{maskAddress(transferCard.toAddress)}</Text>
+                        </View>
+                      </View>
+
+                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "rgba(15,23,42,0.32)", padding: 12, gap: 6 }}>
+                        <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
+                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>当前状态：待签名确认</Text>
+                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>发送数量：{transferCard.amount} {transferCard.symbol}</Text>
+                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>目标地址：{maskAddress(transferCard.toAddress)}</Text>
+                      </View>
+
+                      <Text style={styles.cardHelperTextOnDark}>
+                        提交前先确认目标地址、链路类型与资产余额，后续会继续补签名回传与广播回执。
+                      </Text>
+
+                      <View style={styles.swapProgressPanel}>
+                        <Text style={styles.swapProgressTitle}>执行链路进度</Text>
+                        {transferCard.progress.map((step) => (
+                          <View key={step.key} style={styles.swapProgressRow}>
+                            <View style={[styles.swapProgressDot, step.status === "done" ? styles.swapProgressDotDone : styles.swapProgressDotPending]} />
+                            <Text style={styles.swapProgressLabel}>{step.label}</Text>
+                            <Text style={[styles.swapProgressStatus, step.status === "done" ? styles.swapProgressStatusDone : styles.swapProgressStatusPending]}>
+                              {step.status === "done" ? "已完成" : "进行中"}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+
+                      <View style={styles.cardActionRow}>
+                        <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`确认一下 ${transferCard.amount} ${transferCard.symbol} 转账条件`)}>
+                          <Text style={styles.secondaryActionText}>继续确认条件</Text>
                         </Pressable>
                         <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
                           <Text style={styles.primaryActionText}>先确认钱包余额</Text>
