@@ -687,6 +687,9 @@ export default function ChatScreen() {
   const [activeFilter, setActiveFilter] = useState<ChatFilterKey>("all");
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
 
+  const incomingQuery = typeof params.q === "string" ? params.q.trim() : "";
+  const isFromCommunity = params.source === "community" && incomingQuery.length > 0;
+
   const walletHint = useMemo(() => {
     return "支持查询实时行情、赚币产品、钱包资产、聪明钱、Meme 扫描，以及基于钱包地址发起真实兑换链路。";
   }, []);
@@ -1010,10 +1013,12 @@ export default function ChatScreen() {
             >
               <View style={styles.heroInner}>
                 <View style={styles.statusPill}>
-                  <Text style={styles.statusPillText}>Agent 对话主线程</Text>
+                  <Text style={styles.statusPillText}>{isFromCommunity ? "已从社区进入对话" : "Agent 对话主线程"}</Text>
                 </View>
-                <Text style={styles.heroTitle}>在聊天里完成理解、决策与执行</Text>
-                <Text style={styles.heroDescription}>{walletHint}</Text>
+                <Text style={styles.heroTitle}>{isFromCommunity ? `继续理解：${incomingQuery}` : "在聊天里完成理解、决策与执行"}</Text>
+                <Text style={styles.heroDescription}>
+                  {isFromCommunity ? "我已经接住你在社区里输入的关注点，接下来会围绕这个主题继续分析、判断并给出可执行结果。" : walletHint}
+                </Text>
               </View>
             </LinearGradient>
 
