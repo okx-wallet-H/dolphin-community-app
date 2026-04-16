@@ -19,6 +19,7 @@ import { TopTabs } from "@/components/TopTabs";
 import {
   executeDexSwap,
   getAccountAssets,
+  getDexSwapOrders,
   getDexSwapQuote,
   getMarketSnapshotByMcp,
   getMemeScanListByMcp,
@@ -1134,6 +1135,46 @@ export default function ChatScreen() {
             tone: executeResult.status === "success" ? "success" : "default",
           },
         ]);
+
+        const canPollOrder =
+          executeResult.status !== "success" && Boolean(executeResult.orderId && pending.swap?.chainIndex);
+
+        if (canPollOrder) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          const ordersResult = await getDexSwapOrders({
+            address: pending.swap.broadcastAddress || pending.swap.userWalletAddress,
+            chainIndex: pending.swap.chainIndex,
+            orderId: executeResult.orderId,
+            limit: "1",
+          });
+
+          if (!active) return;
+
+          const order = (ordersResult.data?.[0] ?? null) as Record<string, unknown> | null;
+          const txStatus = typeof order?.txStatus === "string" ? order.txStatus : typeof order?.txstatus === "string" ? order.txstatus : "";
+          const polledTxHash = typeof order?.txHash === "string" ? order.txHash : executeResult.txHash;
+          const isSettled = txStatus === "2";
+
+          appendMessages([
+            {
+              id: `assistant-signature-${resumeKey}-poll-result`,
+              role: "assistant",
+              title: isSettled ? "订单状态已更新" : "订单仍在处理中",
+              content: isSettled
+                ? `我已经查到这笔兑换的最新订单状态，当前已进入完成回执阶段，订单号 ${executeResult.orderId}。`
+                : `我已经重新查询这笔兑换的订单状态，当前仍在链上处理中，订单号 ${executeResult.orderId}。`,
+              meta: polledTxHash
+                ? `链上回执：${polledTxHash}`
+                : "当前订单查询已完成，但暂未返回新的链上回执。",
+              tone: isSettled ? "success" : "default",
+            },
+          ]);
+
+          if (isSettled) {
+            await clearPendingSignatureContext();
+          }
+          return;
+        }
 
         await clearPendingSignatureContext();
       } catch (resumeError) {
