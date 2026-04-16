@@ -1974,7 +1974,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.08)",
     paddingHorizontal: 14,
   },
   memeRow: {
@@ -1984,7 +1986,9 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 18,
     padding: 12,
-    backgroundColor: "rgba(124,58,237,0.06)",
+    backgroundColor: "rgba(248,250,252,0.96)",
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.05)",
   },
   memeLeft: {
     flex: 1,
