@@ -21,11 +21,15 @@
 | LEDGER-0001 | TASK-0001 | 从原仓库创建新的独立工作仓库 | Manus AI | done | GitHub 仓库访问权限 | 本地 git 远程检查与远程推送检查 | 已创建 `okx-wallet-H/dolphin-community-app`，后续只在新仓库开发 |
 | LEDGER-0002 | TASK-0002 | 建立主开发清单 | Manus AI | done | 无 | 文档写入完成 | 已建立 `docs/governance/MASTER_DEVELOPMENT_BACKLOG.md` |
 | LEDGER-0003 | TASK-0003 | 建立执行台账 | Manus AI | done | 无 | 文档写入完成 | 本文档即为执行台账 |
-| LEDGER-0004 | TASK-0004 | 建立审核与资源请求登记 | Manus AI | todo | 无 | 待创建登记文档 | 下一步创建 |
-| LEDGER-0005 | TASK-0005 | 清理历史遗留 todo 的干扰 | Manus AI | in_progress | 原始 todo 快照归档 | 文档检查 | 已归档原始 todo，待重写根级 `todo.md` |
-| LEDGER-0006 | TASK-0101 | 定义颜色 token | Manus AI | todo | 需要先完成根级治理文档 | 设计 token 检查 | 尚未开始 |
-| LEDGER-0007 | TASK-0105 | 建立基础组件库 | Manus AI | todo | 颜色、字阶、间距规范完成 | 组件自测与页面接入 | 尚未开始 |
-| LEDGER-0008 | TASK-0201 | 重构聊天页信息架构 | Manus AI | todo | UI Foundation 首轮完成 | 页面截图与交互自测 | 尚未开始 |
+| LEDGER-0004 | TASK-0004 | 建立审核与资源请求登记 | Manus AI | done | 无 | 文档写入完成 | 已建立 `docs/governance/REVIEW_AND_RESOURCE_REGISTER.md` |
+| LEDGER-0005 | TASK-0005 | 清理历史遗留 todo 的干扰 | Manus AI | done | 原始 todo 快照归档 | 文档检查 | 已归档原始 todo，并重写根级 `todo.md` 作为新入口 |
+| LEDGER-0006 | TASK-0101 | 定义颜色 token | Manus AI | done | 根级治理文档完成 | 主题文件、类型检查 | 已完成第一轮极简苹果感 token 基线重建 |
+| LEDGER-0007 | TASK-0105 | 建立基础组件库 | Manus AI | in_progress | 颜色、字阶、间距规范完成 | 组件自测与页面接入 | 已先完成顶栏与分段切换组件第一轮重构 |
+| LEDGER-0008 | TASK-0201 | 重构聊天页信息架构 | Manus AI | todo | UI Foundation 首轮完成 | 页面截图与交互自测 | 下一步开始将新头部与分类结构接入聊天页 |
+| LEDGER-0009 | TASK-0102 | 定义字体与数字排版规范 | Manus AI | done | 颜色 token 基线 | 设计常量检查、类型检查 | 已在 `constants/manus-ui.ts` 中完成第一轮字体与数字规范 |
+| LEDGER-0010 | TASK-0103 | 定义间距与圆角体系 | Manus AI | done | 颜色 token 基线 | 设计常量检查、类型检查 | 已在 `constants/manus-ui.ts` 中完成第一轮间距与圆角规范 |
+| LEDGER-0011 | TASK-0104 | 定义阴影与玻璃材质规则 | Manus AI | done | 颜色 token 基线 | 设计常量检查、类型检查 | 已建立基础阴影与玻璃材质规则并通过类型检查 |
+| LEDGER-0012 | TASK-0901 | 建立基础验证检查点 | Manus AI | done | 新仓库依赖安装 | `pnpm install` 与 `pnpm check` | 新仓库依赖已安装，当前类型检查通过 |
 
 ## 三、阻塞记录
 
