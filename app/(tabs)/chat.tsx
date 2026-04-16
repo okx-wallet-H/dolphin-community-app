@@ -1208,6 +1208,10 @@ export default function ChatScreen() {
                         </View>
                       ))}
 
+                      <Text style={styles.cardHelperText}>
+                        先看收益与体量，再确认风险等级和申购周期，避免只按最高 APR 做决策。
+                      </Text>
+
                       <View style={styles.cardActionRow}>
                         <Pressable style={styles.secondaryActionLight} onPress={() => void sendMessage(`继续找 ${defiCard.token} 的赚币产品`)}>
                           <Text style={styles.secondaryActionLightText}>查看更多</Text>
@@ -1311,11 +1315,15 @@ export default function ChatScreen() {
                       </View>
 
                       <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "rgba(15,23,42,0.32)", padding: 12, gap: 6 }}>
-                        <Text style={[styles.metricLabel, { marginBottom: 2 }]}>路由摘要</Text>
+                        <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>路径：{swapCard.fromSymbol} → {swapCard.toSymbol}</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>路由来源：{swapCard.routeLabel}</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>价格影响：{swapCard.priceImpact}</Text>
                       </View>
+
+                      <Text style={styles.cardHelperTextOnDark}>
+                        提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。
+                      </Text>
 
                       <View style={styles.cardActionRow}>
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
@@ -1807,6 +1815,16 @@ const styles = StyleSheet.create({
   cardActionRow: {
     flexDirection: "row",
     gap: 10,
+  },
+  cardHelperText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#64748B",
+  },
+  cardHelperTextOnDark: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: "rgba(255,255,255,0.76)",
   },
   primaryAction: {
     flex: 1,
