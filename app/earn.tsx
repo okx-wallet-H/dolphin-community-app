@@ -220,7 +220,7 @@ export default function EarnScreen() {
           </Pressable>
         </View>
 
-        <LinearGradient colors={['#140A2C', '#3B1D77', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+        <LinearGradient colors={['#FFFFFF', '#F7F3FF', '#EFEAFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <View>
               <Text style={styles.heroEyebrow}>AI EARN</Text>
@@ -364,7 +364,7 @@ export default function EarnScreen() {
           <Text style={styles.bottomGhostButtonText}>{planLinkedToAgent ? '查看 Agent 任务' : '前往 Agent 页面'}</Text>
         </Pressable>
         <Pressable style={styles.bottomPrimaryButton} onPress={() => loadPlan(selectedAmount, true)}>
-          <LinearGradient colors={['#8B5CF6', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bottomPrimaryButtonGradient}>
+          <LinearGradient colors={['#8F7CFF', '#6E5BFF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.bottomPrimaryButtonGradient}>
             <Text style={styles.bottomPrimaryButtonText}>重新生成策略</Text>
           </LinearGradient>
         </Pressable>
@@ -435,33 +435,35 @@ const styles = StyleSheet.create({
   heroEyebrow: {
     fontSize: 12,
     letterSpacing: 1.4,
-    color: 'rgba(255,255,255,0.72)',
+    color: PRIMARY,
     marginBottom: 6,
   },
   heroTitle: {
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: TEXT_PRIMARY,
     maxWidth: 250,
   },
   heroChip: {
     minHeight: 34,
     paddingHorizontal: 14,
     borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroChipText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: PRIMARY,
   },
   heroDescription: {
     fontSize: 14,
     lineHeight: 22,
-    color: 'rgba(255,255,255,0.86)',
+    color: TEXT_MUTED,
     marginBottom: 18,
   },
   heroMetricRow: {
@@ -472,18 +474,20 @@ const styles = StyleSheet.create({
   heroMetricBox: {
     flex: 1,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.06)',
     padding: 16,
   },
   heroMetricLabel: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.68)',
+    color: TEXT_MUTED,
     marginBottom: 8,
   },
   heroMetricValue: {
     fontSize: 28,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: TEXT_PRIMARY,
   },
   heroMetricValueSmall: {
     fontSize: 16,

@@ -1633,7 +1633,7 @@ export default function ChatScreen() {
                   const snapshot = item.card.payload.snapshot;
                   return (
                     <LinearGradient
-                      colors={["rgba(15,23,42,0.98)", "rgba(31,41,55,0.96)", "rgba(110,91,255,0.84)"]}
+                      colors={["#FFFFFF", "#F7F3FF", "#EFEAFF"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1782,7 +1782,7 @@ export default function ChatScreen() {
                   const smartMoneyCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(15,23,42,0.98)", "rgba(30,41,59,0.96)", "rgba(110,91,255,0.82)"]}
+                      colors={["#FFFFFF", "#F6F3FF", "#F0EAFF"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1827,7 +1827,7 @@ export default function ChatScreen() {
                   const swapCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(15,23,42,0.98)", "rgba(31,41,55,0.96)", "rgba(110,91,255,0.8)"]}
+                      colors={["#FFFFFF", "#F7F3FF", "#EFEAFF"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1868,7 +1868,7 @@ export default function ChatScreen() {
                         </View>
                       </View>
 
-                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "rgba(15,23,42,0.32)", padding: 12, gap: 6 }}>
+                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "#FAF7FF", padding: 12, gap: 6 }}>
                         <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>路径：{swapCard.fromSymbol} → {swapCard.toSymbol}</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>路由来源：{swapCard.routeLabel}</Text>
@@ -1924,7 +1924,7 @@ export default function ChatScreen() {
                   const transferCard = item.card.payload;
                   return (
                     <LinearGradient
-                      colors={["rgba(15,23,42,0.98)", "rgba(31,41,55,0.96)", "rgba(92,109,140,0.82)"]}
+                      colors={["#FFFFFF", "#F7F4FF", "#F3F4F8"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
@@ -1957,7 +1957,7 @@ export default function ChatScreen() {
                         </View>
                       </View>
 
-                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "rgba(15,23,42,0.32)", padding: 12, gap: 6 }}>
+                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "#FAF7FF", padding: 12, gap: 6 }}>
                         <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>当前状态：{transferCard.phase === "awaiting_confirmation" ? "待执行确认" : transferCard.phase === "executing" ? "执行中" : transferCard.phase === "success" ? "已完成" : transferCard.phase === "failed" ? "执行失败" : "预览中"}</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>发送数量：{transferCard.amount} {transferCard.symbol}</Text>
@@ -2397,7 +2397,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(110,91,255,0.10)",
   },
   assetIconWrap: {
     backgroundColor: "rgba(124,58,237,0.10)",
@@ -2411,7 +2411,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "700",
     letterSpacing: 0.4,
-    color: "rgba(255,255,255,0.78)",
+    color: "#6E5BFF",
   },
   darkEyebrow: {
     color: "#7C3AED",
@@ -2420,7 +2420,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 26,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#111827",
   },
   darkTitle: {
     color: "#1A1A2E",
@@ -2429,9 +2429,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(110,91,255,0.10)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(110,91,255,0.14)",
   },
   badgeText: {
     fontSize: 12,
@@ -2442,7 +2442,7 @@ const styles = StyleSheet.create({
     fontSize: 30,
     lineHeight: 36,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#111827",
   },
   metricGrid: {
     flexDirection: "row",
@@ -2452,21 +2452,21 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 18,
     padding: 12,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    backgroundColor: "#FAF7FF",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(15,23,42,0.06)",
     gap: 4,
   },
   metricLabel: {
     fontSize: 11,
     lineHeight: 16,
-    color: "rgba(255,255,255,0.72)",
+    color: "#667085",
   },
   metricValue: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#111827",
   },
   cardActionRow: {
     flexDirection: "row",
@@ -2480,14 +2480,14 @@ const styles = StyleSheet.create({
   cardHelperTextOnDark: {
     fontSize: 12,
     lineHeight: 18,
-    color: "rgba(255,255,255,0.76)",
+    color: "#667085",
   },
   swapProgressPanel: {
     marginTop: 4,
     borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#FAF7FF",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(15,23,42,0.06)",
     padding: 12,
     gap: 8,
   },
@@ -2495,7 +2495,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
-    color: "rgba(255,255,255,0.72)",
+    color: "#667085",
   },
   swapProgressRow: {
     flexDirection: "row",
@@ -2508,17 +2508,17 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   swapProgressDotDone: {
-    backgroundColor: "#E5E7EB",
+    backgroundColor: "#6E5BFF",
   },
   swapProgressDotPending: {
-    backgroundColor: "rgba(255,255,255,0.38)",
+    backgroundColor: "rgba(110,91,255,0.22)",
   },
   swapProgressLabel: {
     flex: 1,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "600",
-    color: "rgba(255,255,255,0.88)",
+    color: "#111827",
   },
   swapProgressStatus: {
     fontSize: 12,
@@ -2526,10 +2526,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   swapProgressStatusDone: {
-    color: "#F8FAFC",
+    color: "#6E5BFF",
   },
   swapProgressStatusPending: {
-    color: "rgba(255,255,255,0.62)",
+    color: "#667085",
   },
   primaryAction: {
     flex: 1,
@@ -2537,11 +2537,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#111827",
+    backgroundColor: "#6E5BFF",
     paddingHorizontal: 14,
-    shadowColor: "#0F172A",
+    shadowColor: "#C7BAFF",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.16,
     shadowRadius: 12,
     elevation: 2,
   },
@@ -2557,16 +2557,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(15,23,42,0.08)",
     paddingHorizontal: 14,
   },
   secondaryActionText: {
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#6E5BFF",
   },
   secondaryActionLight: {
     flex: 1,
@@ -2657,9 +2657,9 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 18,
     padding: 12,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "#FAF7FF",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(15,23,42,0.06)",
   },
   smartMoneyLeft: {
     flex: 1,
@@ -2673,12 +2673,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#111827",
   },
   smartMoneyMeta: {
     fontSize: 12,
     lineHeight: 18,
-    color: "rgba(255,255,255,0.74)",
+    color: "#667085",
   },
   smartMoneyToken: {
     fontSize: 12,

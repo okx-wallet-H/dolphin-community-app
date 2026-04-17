@@ -318,7 +318,7 @@ export default function WalletRoute() {
           }
         >
           <LinearGradient
-            colors={["#A978FF", "#7C3AED", "#6D28D9"]}
+            colors={["#FFFFFF", "#F7F3FF", "#EFEAFF"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.heroCard}
@@ -603,30 +603,30 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.20)",
-    shadowColor: "#7C3AED",
-    shadowOpacity: 0.16,
-    shadowOffset: { width: 0, height: 14 },
+    borderColor: "rgba(110,91,255,0.12)",
+    shadowColor: "#C7BAFF",
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 12 },
     shadowRadius: 24,
-    elevation: 6,
+    elevation: 4,
   },
   heroLabel: {
     fontSize: 13,
     lineHeight: 18,
-    color: "#E2D6FF",
+    color: PRIMARY,
     marginBottom: 4,
   },
   heroValue: {
     fontSize: 32,
     lineHeight: 40,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: TEXT_PRIMARY,
     marginBottom: 8,
   },
   heroSubText: {
     fontSize: 13,
     lineHeight: 18,
-    color: "#E2D6FF",
+    color: TEXT_SECONDARY,
     marginBottom: 20,
   },
   addressList: {
@@ -636,22 +636,24 @@ const styles = StyleSheet.create({
   addressChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(255,255,255,0.92)",
     borderRadius: 99,
     paddingVertical: 6,
     paddingHorizontal: 12,
     gap: 6,
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.06)",
   },
   addressChipLabel: {
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: PRIMARY,
   },
   addressChipText: {
     fontSize: 13,
     lineHeight: 18,
-    color: "#E2D6FF",
+    color: TEXT_PRIMARY,
   },
   loadingCard: {
     backgroundColor: "rgba(255, 255, 255, 0.84)",

@@ -32,7 +32,7 @@ import {
 } from "@/lib/_core/api";
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
-const BRAND_GRADIENT = ["#9B6BFF", "#7C3AED", "#6D28D9"] as const;
+const BRAND_GRADIENT = ["#8F7CFF", "#7A67FF", "#6E5BFF"] as const;
 const PAGE_BG = "#FCFAFF";
 const PAGE_SOFT = "#F7F4FF";
 const CARD_BG = "#FFFFFF";

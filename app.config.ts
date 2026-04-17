@@ -39,7 +39,8 @@ const env = {
   androidPackage: bundleId,
 };
 
-const expoProjectId = process.env.EXPO_PROJECT_ID?.trim() || undefined;
+const expoProjectId =
+  process.env.EXPO_PROJECT_ID?.trim() || "174d6be5-8a0e-429a-8b8b-7b2ce9a8906d";
 
 const config: ExpoConfig = {
   name: env.appName,

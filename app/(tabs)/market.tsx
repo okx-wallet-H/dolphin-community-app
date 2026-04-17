@@ -1,20 +1,39 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, RefreshControl, StyleSheet, Text, View, Pressable } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { getMarketSnapshotByMcp, getPublicMarketSnapshot, getHotTokensByMcp, type HotTokenItem } from "@/lib/_core/api";
+import {
+  getHotTokensByMcp,
+  getMarketSnapshotByMcp,
+  type HotTokenItem,
+} from "@/lib/_core/api";
+import {
+  ManusColors,
+  ManusEmphasisShadow,
+  ManusRadius,
+  ManusShadow,
+  ManusSpacing,
+} from "@/constants/manus-ui";
 
-const PRIMARY = "#7C3AED";
-const PRIMARY_LIGHT = "#F5F3FF";
-const PAGE_BG = "#FFFFFF";
-const CARD_BG = "#FFFFFF";
-const BORDER = "#E8EAF2";
-const TEXT_PRIMARY = "#1A1A2E";
-const TEXT_BODY = "#31324A";
-const TEXT_SECONDARY = "#666C85";
-const SUCCESS = "#16A34A";
-const DANGER = "#DC2626";
+const PRIMARY = ManusColors.primary;
+const PRIMARY_LIGHT = ManusColors.surfaceTint;
+const PAGE_BG = ManusColors.background;
+const CARD_BG = ManusColors.surface;
+const BORDER = ManusColors.divider;
+const TEXT_PRIMARY = ManusColors.text;
+const TEXT_BODY = ManusColors.textSecondary;
+const TEXT_SECONDARY = ManusColors.muted;
+const SUCCESS = ManusColors.success;
+const DANGER = ManusColors.danger;
 
 const FILTERS = ["总览", "热门", "AI关注", "稳定币", "二层网络"] as const;
 
@@ -26,13 +45,21 @@ const MARKET_BASE = [
   { id: "sui", symbol: "SUI", name: "Sui", volume: "$1.2B" },
 ] as const;
 
+const TOKEN_COLORS: Record<string, string> = {
+  BTC: "#F59E0B",
+  ETH: "#818CF8",
+  SOL: "#111827",
+  BNB: "#F3BA2F",
+  SUI: "#60A5FA",
+};
+
 type SnapshotRow = {
   symbol: string;
   price: number;
   change24h: number | null;
   volume24h?: string;
   updateTime: string;
-  source?: 'okx-mcp' | 'demo';
+  source?: "okx-mcp" | "demo";
 };
 
 type MarketCard = {
@@ -45,6 +72,7 @@ type MarketCard = {
   trendLabel: string;
   updatedLabel: string;
   positive: boolean;
+  sparkHeights: number[];
   isHot?: boolean;
 };
 
@@ -77,15 +105,24 @@ function formatUpdatedLabel(value?: string): string {
     return "刚刚更新";
   }
 
-  return `更新于 ${date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`;
+  return `更新于 ${date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+function buildSparkHeights(seed: string, positive: boolean): number[] {
+  const base = positive ? [12, 18, 14, 20, 22, 19, 26] : [24, 18, 20, 16, 14, 12, 10];
+  const offset = seed.length % 3;
+  return base.map((value, index) => value + ((index + offset) % 3));
 }
 
 export default function MarketScreen() {
+  const router = useRouter();
   const [snapshots, setSnapshots] = useState<Record<string, SnapshotRow>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorText, setErrorText] = useState("");
-
   const [hotTokens, setHotTokens] = useState<HotTokenItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>("总览");
 
@@ -96,8 +133,7 @@ export default function MarketScreen() {
       }
 
       setErrorText("");
-      
-      // 1. 获取主流币行情
+
       const results = await Promise.all(
         MARKET_BASE.map(async (item) => {
           try {
@@ -118,12 +154,11 @@ export default function MarketScreen() {
 
       setSnapshots(nextMap);
 
-      // 2. 获取热门代币
       try {
-        const hot = await getHotTokensByMcp('ethereum');
+        const hot = await getHotTokensByMcp("ethereum");
         setHotTokens(hot.slice(0, 10));
-      } catch (e) {
-        console.warn('Failed to load hot tokens:', e);
+      } catch (error) {
+        console.warn("Failed to load hot tokens:", error);
       }
 
       if (!Object.keys(nextMap).length) {
@@ -143,43 +178,47 @@ export default function MarketScreen() {
     const baseCards = MARKET_BASE.map((item) => {
       const snapshot = snapshots[item.symbol];
       const positive = (snapshot?.change24h ?? 0) >= 0;
+
       return {
         ...item,
         priceText: snapshot?.price ? formatPrice(snapshot.price) : loading ? "同步中" : "等待行情",
         changeText: formatPercent(snapshot?.change24h ?? null),
-        trendLabel: snapshot?.change24h === null || snapshot?.change24h === undefined
-          ? "等待行情波动确认"
-          : positive
-            ? "短线偏强，适合继续观察突破"
-            : "波动承压，注意回撤与仓位控制",
+        trendLabel:
+          snapshot?.change24h === null || snapshot?.change24h === undefined
+            ? "等待行情波动确认"
+            : positive
+              ? "短线偏强，适合继续观察突破"
+              : "波动承压，注意回撤与仓位控制",
         updatedLabel: formatUpdatedLabel(snapshot?.updateTime),
         positive,
+        sparkHeights: buildSparkHeights(item.symbol, positive),
         isHot: false,
       };
     });
 
     if (activeFilter === "热门") {
-      const hotCards = hotTokens.map((t) => {
-        const change = parseFloat(t.change24h) / 100;
+      return hotTokens.map((token) => {
+        const change = parseFloat(token.change24h) / 100;
         const positive = change >= 0;
+
         return {
-          id: t.address,
-          symbol: t.symbol,
-          name: t.name,
-          volume: `$${(parseFloat(t.volume24h) / 1e6).toFixed(1)}M`,
-          priceText: formatPrice(parseFloat(t.price)),
+          id: token.address,
+          symbol: token.symbol,
+          name: token.name,
+          volume: `$${(parseFloat(token.volume24h) / 1e6).toFixed(1)}M`,
+          priceText: formatPrice(parseFloat(token.price)),
           changeText: formatPercent(change),
           trendLabel: "当前链上热门交易代币",
           updatedLabel: "刚刚更新",
           positive,
+          sparkHeights: buildSparkHeights(token.symbol, positive),
           isHot: true,
         };
       });
-      return hotCards;
     }
 
     return baseCards;
-  }, [loading, snapshots, hotTokens, activeFilter]);
+  }, [activeFilter, hotTokens, loading, snapshots]);
 
   const overview = useMemo(() => {
     const available = Object.values(snapshots);
@@ -197,7 +236,11 @@ export default function MarketScreen() {
   }, [snapshots]);
 
   return (
-    <ScreenContainer className="px-4 pt-4" safeAreaClassName="bg-background" containerClassName="bg-background">
+    <ScreenContainer
+      className="px-4 pt-4"
+      safeAreaClassName="bg-background"
+      containerClassName="bg-background"
+    >
       <FlatList
         data={cards}
         keyExtractor={(item) => item.id}
@@ -215,12 +258,24 @@ export default function MarketScreen() {
         }
         ListHeaderComponent={
           <View style={styles.headerStack}>
-            <View style={styles.headerTextWrap}>
-              <Text style={styles.pageTitle}>行情</Text>
-              <Text style={styles.pageSubtitle}>聚合 BTC、ETH、SOL 等主流资产价格，帮助投资人快速理解产品的实时行情能力与资产观察视角。</Text>
+            <View style={styles.topBar}>
+              <View style={styles.headerTextWrap}>
+                <Text style={styles.pageTitle}>行情</Text>
+                <Text style={styles.pageSubtitle}>
+                  聚合 BTC、ETH、SOL 等主流资产价格，帮助投资人快速理解产品的实时行情能力与资产观察视角。
+                </Text>
+              </View>
+              <Pressable style={styles.inlineLink} onPress={() => router.push("/(tabs)/wallet")}>
+                <Text style={styles.inlineLinkText}>返回钱包</Text>
+              </Pressable>
             </View>
 
-            <LinearGradient colors={["#B58CFF", "#7C3AED", "#6D28D9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
+            <LinearGradient
+              colors={["#FFFFFF", "#F7F3FF", "#EFEAFF"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroCard}
+            >
               <Text style={styles.heroEyebrow}>AI 行情总览</Text>
               <Text style={styles.heroTitle}>主流资产价格已接入实时查询，市场方向与强弱一屏可读</Text>
               <Text style={styles.heroSummary}>
@@ -229,10 +284,12 @@ export default function MarketScreen() {
                   : "页面优先展示实时公共行情；若外部接口短时波动，仍保留专业的结构与中文提示，保证融资演示不断链。"}
               </Text>
 
-              <View style={styles.heroMetricRow}>
+              <View style={styles.heroMetricColumn}>
                 <View style={styles.heroMetricCard}>
                   <Text style={styles.heroMetricLabel}>上涨资产</Text>
-                  <Text style={styles.heroMetricValue}>{overview.total ? `${overview.gainers}/${overview.total}` : "等待同步"}</Text>
+                  <Text style={styles.heroMetricValue}>
+                    {overview.total ? `${overview.gainers}/${overview.total}` : "等待同步"}
+                  </Text>
                   <Text style={styles.heroMetricSub}>市场强弱一眼可见</Text>
                 </View>
                 <View style={styles.heroMetricCard}>
@@ -245,12 +302,22 @@ export default function MarketScreen() {
 
             <View style={styles.filterRow}>
               {FILTERS.map((item) => (
-                <Pressable 
-                  key={item} 
+                <Pressable
+                  key={item}
                   onPress={() => setActiveFilter(item)}
-                  style={[styles.filterChip, activeFilter === item ? styles.filterChipActive : styles.filterChipIdle]}
+                  style={[
+                    styles.filterChip,
+                    activeFilter === item ? styles.filterChipActive : styles.filterChipIdle,
+                  ]}
                 >
-                  <Text style={[styles.filterText, activeFilter === item ? styles.filterTextActive : styles.filterTextIdle]}>{item}</Text>
+                  <Text
+                    style={[
+                      styles.filterText,
+                      activeFilter === item ? styles.filterTextActive : styles.filterTextIdle,
+                    ]}
+                  >
+                    {item}
+                  </Text>
                 </Pressable>
               ))}
             </View>
@@ -263,37 +330,85 @@ export default function MarketScreen() {
             ) : null}
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.marketCard}>
-            <View style={styles.marketCardHeader}>
-              <View>
-                <Text style={styles.marketSymbol}>{item.symbol}</Text>
-                <Text style={styles.marketName}>{item.name}</Text>
+        renderItem={({ item }) => {
+          const tokenColor = TOKEN_COLORS[item.symbol] ?? PRIMARY;
+
+          return (
+            <View style={styles.marketCard}>
+              <View style={styles.marketCardHeader}>
+                <View style={styles.marketLeft}>
+                  <View style={[styles.tokenAvatar, { backgroundColor: `${tokenColor}14` }]}>
+                    <Text style={[styles.tokenAvatarText, { color: tokenColor }]}>{item.symbol.slice(0, 1)}</Text>
+                  </View>
+                  <View style={styles.marketTitleWrap}>
+                    <View style={styles.marketTitleRow}>
+                      <Text style={styles.marketSymbol}>{item.symbol}</Text>
+                      {item.isHot ? (
+                        <View style={styles.hotBadge}>
+                          <Text style={styles.hotBadgeText}>热门</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.marketName}>{item.name}</Text>
+                  </View>
+                </View>
+                <View
+                  style={[
+                    styles.changePill,
+                    item.positive ? styles.changePillUp : styles.changePillDown,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.changeText,
+                      item.positive ? styles.changeTextUp : styles.changeTextDown,
+                    ]}
+                  >
+                    {item.changeText}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.changePill, item.positive ? styles.changePillUp : styles.changePillDown]}>
-                <Text style={[styles.changeText, item.positive ? styles.changeTextUp : styles.changeTextDown]}>{item.changeText}</Text>
+
+              <View style={styles.priceRow}>
+                <View style={styles.priceWrap}>
+                  <Text style={styles.marketPrice}>{item.priceText}</Text>
+                  <Text style={styles.marketTrend}>{item.trendLabel}</Text>
+                </View>
+                <View style={styles.sparkWrap}>
+                  {item.sparkHeights.map((height, index) => (
+                    <View
+                      key={`${item.id}-${index}`}
+                      style={[
+                        styles.sparkBar,
+                        {
+                          height,
+                          backgroundColor: item.positive ? "rgba(18,185,129,0.24)" : "rgba(239,68,68,0.20)",
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.marketMetaRow}>
+                <View style={styles.metaBlock}>
+                  <Text style={styles.metaLabel}>24 小时成交额</Text>
+                  <Text style={styles.metaValue}>{item.volume}</Text>
+                </View>
+                <View style={styles.metaBlock}>
+                  <Text style={styles.metaLabel}>刷新时间</Text>
+                  <Text style={styles.metaValue}>{item.updatedLabel}</Text>
+                </View>
               </View>
             </View>
-
-            <Text style={styles.marketPrice}>{item.priceText}</Text>
-            <Text style={styles.marketTrend}>{item.trendLabel}</Text>
-
-            <View style={styles.marketMetaRow}>
-              <View style={styles.metaBlock}>
-                <Text style={styles.metaLabel}>24 小时成交额</Text>
-                <Text style={styles.metaValue}>{item.volume}</Text>
-              </View>
-              <View style={styles.metaBlock}>
-                <Text style={styles.metaLabel}>刷新时间</Text>
-                <Text style={styles.metaValue}>{item.updatedLabel}</Text>
-              </View>
-            </View>
-          </View>
-        )}
+          );
+        }}
         ListFooterComponent={
           <View style={styles.footerCard}>
             <Text style={styles.footerTitle}>演示说明</Text>
-            <Text style={styles.footerText}>行情页用于承接 AI 对话里的“现在 BTC 价格多少”等查询结果。即使在网络波动时，页面也会保留中文状态说明，避免白屏、空白或不专业的英文占位。</Text>
+            <Text style={styles.footerText}>
+              行情页用于承接 AI 对话里的“现在 BTC 价格多少”等查询结果。即使在网络波动时，页面也会保留中文状态说明，避免白屏、空白或不专业的英文占位。
+            </Text>
           </View>
         }
       />
@@ -304,14 +419,18 @@ export default function MarketScreen() {
 const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: 148,
-    gap: 16,
+    gap: ManusSpacing.lg,
+    backgroundColor: PAGE_BG,
   },
   headerStack: {
-    gap: 16,
-    marginBottom: 16,
+    gap: ManusSpacing.lg,
+    marginBottom: ManusSpacing.md,
+  },
+  topBar: {
+    gap: ManusSpacing.md,
   },
   headerTextWrap: {
-    gap: 8,
+    gap: ManusSpacing.sm,
   },
   pageTitle: {
     fontSize: 30,
@@ -324,54 +443,74 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: TEXT_SECONDARY,
   },
+  inlineLink: {
+    alignSelf: "flex-start",
+    borderRadius: ManusRadius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: "rgba(110,91,255,0.16)",
+  },
+  inlineLinkText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: PRIMARY,
+  },
   heroCard: {
     borderRadius: 28,
-    padding: 20,
+    padding: ManusSpacing.xl,
     gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(110,91,255,0.12)",
+    ...ManusEmphasisShadow,
   },
   heroEyebrow: {
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
-    color: "rgba(255,255,255,0.78)",
+    color: PRIMARY,
   },
   heroTitle: {
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 26,
+    lineHeight: 32,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: TEXT_PRIMARY,
   },
   heroSummary: {
     fontSize: 14,
     lineHeight: 22,
-    color: "rgba(255,255,255,0.88)",
+    color: TEXT_BODY,
   },
-  heroMetricRow: {
-    flexDirection: "row",
+  heroMetricColumn: {
     gap: 12,
   },
   heroMetricCard: {
-    flex: 1,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 14,
-    backgroundColor: "rgba(255,255,255,0.16)",
-    gap: 4,
+    backgroundColor: "rgba(255,255,255,0.86)",
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.06)",
+    ...ManusShadow,
   },
   heroMetricLabel: {
     fontSize: 12,
     lineHeight: 16,
-    color: "rgba(255,255,255,0.78)",
+    color: TEXT_SECONDARY,
   },
   heroMetricValue: {
-    fontSize: 20,
-    lineHeight: 24,
+    marginTop: 4,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: TEXT_PRIMARY,
   },
   heroMetricSub: {
+    marginTop: 4,
     fontSize: 12,
     lineHeight: 18,
-    color: "rgba(255,255,255,0.82)",
+    color: TEXT_SECONDARY,
   },
   filterRow: {
     flexDirection: "row",
@@ -379,17 +518,19 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   filterChip: {
-    borderRadius: 999,
+    borderRadius: ManusRadius.pill,
     paddingHorizontal: 14,
     paddingVertical: 9,
   },
   filterChipActive: {
-    backgroundColor: PRIMARY,
-  },
-  filterChipIdle: {
     backgroundColor: PRIMARY_LIGHT,
     borderWidth: 1,
-    borderColor: "#DDD6FE",
+    borderColor: "rgba(110,91,255,0.18)",
+  },
+  filterChipIdle: {
+    backgroundColor: CARD_BG,
+    borderWidth: 1,
+    borderColor: "rgba(15,23,42,0.08)",
   },
   filterText: {
     fontSize: 13,
@@ -397,14 +538,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   filterTextActive: {
-    color: "#FFFFFF",
-  },
-  filterTextIdle: {
     color: PRIMARY,
   },
+  filterTextIdle: {
+    color: TEXT_BODY,
+  },
   noticeCard: {
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: ManusRadius.card,
+    padding: ManusSpacing.card,
     backgroundColor: "#FEF2F2",
     borderWidth: 1,
     borderColor: "#FECACA",
@@ -423,28 +564,63 @@ const styles = StyleSheet.create({
   },
   marketCard: {
     backgroundColor: CARD_BG,
-    borderRadius: 24,
+    borderRadius: 26,
     borderWidth: 1,
     borderColor: BORDER,
     padding: 18,
-    gap: 12,
-    shadowColor: "rgba(124,58,237,0.10)",
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 3,
+    gap: 14,
+    ...ManusShadow,
   },
   marketCardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
   },
+  marketLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  tokenAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tokenAvatarText: {
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  marketTitleWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  marketTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   marketSymbol: {
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 20,
+    lineHeight: 24,
     fontWeight: "800",
     color: TEXT_PRIMARY,
+  },
+  hotBadge: {
+    borderRadius: ManusRadius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: PRIMARY_LIGHT,
+  },
+  hotBadgeText: {
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    color: PRIMARY,
   },
   marketName: {
     fontSize: 13,
@@ -452,15 +628,15 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   changePill: {
-    borderRadius: 999,
+    borderRadius: ManusRadius.pill,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   changePillUp: {
-    backgroundColor: "rgba(22,163,74,0.10)",
+    backgroundColor: "rgba(18,185,129,0.10)",
   },
   changePillDown: {
-    backgroundColor: "rgba(220,38,38,0.10)",
+    backgroundColor: "rgba(239,68,68,0.10)",
   },
   changeText: {
     fontSize: 13,
@@ -473,9 +649,18 @@ const styles = StyleSheet.create({
   changeTextDown: {
     color: DANGER,
   },
+  priceRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-end",
+  },
+  priceWrap: {
+    flex: 1,
+    gap: 4,
+  },
   marketPrice: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 30,
+    lineHeight: 36,
     fontWeight: "800",
     color: TEXT_PRIMARY,
   },
@@ -483,6 +668,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     color: TEXT_BODY,
+  },
+  sparkWrap: {
+    minWidth: 84,
+    height: 30,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "flex-end",
+    gap: 4,
+  },
+  sparkBar: {
+    width: 7,
+    borderRadius: 999,
   },
   marketMetaRow: {
     flexDirection: "row",
@@ -507,11 +704,11 @@ const styles = StyleSheet.create({
     color: TEXT_PRIMARY,
   },
   footerCard: {
-    borderRadius: 22,
+    borderRadius: ManusRadius.card,
     backgroundColor: PRIMARY_LIGHT,
     borderWidth: 1,
-    borderColor: "#DDD6FE",
-    padding: 16,
+    borderColor: "rgba(110,91,255,0.14)",
+    padding: ManusSpacing.card,
     gap: 6,
   },
   footerTitle: {
