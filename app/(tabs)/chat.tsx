@@ -993,6 +993,7 @@ export default function ChatScreen() {
           userWalletAddress: walletAddress,
           fromTokenSymbol: parsed.intent.fromSymbol,
           toTokenSymbol: parsed.intent.toSymbol,
+          displayAmount: parsed.intent.amount,
           chainKind,
           slippagePercent: slippage,
         });

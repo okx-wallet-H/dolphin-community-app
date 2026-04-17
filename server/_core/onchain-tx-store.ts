@@ -22,18 +22,13 @@ export type OnchainTxRecord = {
   idempotencyKey?: string;
   retryCount: number;
   lastError?: string;
+  lastResponse?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 };
 
 export type OnchainTxLogLevel = "info" | "warn" | "error";
-export type OnchainTxEventType =
-  | "create"
-  | "execute"
-  | "receipt"
-  | "retry"
-  | "idempotency"
-  | "failure";
+export type OnchainTxEventType = "create" | "execute" | "receipt" | "status" | "failure" | "duplicate";
 
 export type OnchainTxLogRecord = {
   id: string;
@@ -206,7 +201,7 @@ export async function updateOnchainTxByOrderId(
 export async function markOnchainTxPhase(
   txId: string,
   phase: OnchainExecutionPhase,
-  extras?: Partial<Pick<OnchainTxRecord, "orderId" | "txHash" | "retryCount" | "lastError">>,
+  extras?: Partial<Pick<OnchainTxRecord, "orderId" | "txHash" | "retryCount" | "lastError" | "lastResponse">>,
 ) {
   return updateOnchainTx(txId, (current) => ({
     ...current,
@@ -215,6 +210,7 @@ export async function markOnchainTxPhase(
     txHash: extras?.txHash ?? current.txHash,
     retryCount: extras?.retryCount ?? current.retryCount,
     lastError: extras?.lastError,
+    lastResponse: extras?.lastResponse ?? current.lastResponse,
   }));
 }
 

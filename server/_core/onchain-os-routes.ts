@@ -6,9 +6,12 @@ import {
   getOnchainOsConfig,
   previewOnchainSwap,
 } from "./onchain-os";
+import { validateOnchainExecutionRisk } from "./onchain-execution-guard";
+import { buildOnchainIdempotencyKey, shouldBlockDuplicateExecution } from "./onchain-idempotency";
 import {
   appendOnchainTxLog,
   createOnchainTxRecord,
+  findOnchainTxByIdempotencyKey,
   updateOnchainTx,
   updateOnchainTxByOrderId,
 } from "./onchain-tx-store";
@@ -156,9 +159,60 @@ export function registerOnchainOsRoutes(app: Express) {
     const toTokenSymbol = getOptionalBodyString(req.body, "toTokenSymbol");
     const displayAmount = getOptionalBodyString(req.body, "displayAmount");
     const slippagePercent = getOptionalBodyString(req.body, "slippagePercent");
+    const riskError = validateOnchainExecutionRisk({
+      chainIndex,
+      displayAmount,
+      slippagePercent,
+    });
+    if (riskError) {
+      res.status(400).json({
+        code: riskError.code,
+        error: riskError.message,
+      });
+      return;
+    }
+
     const signedTx = getOptionalBodyString(req.body, "signedTx");
     const jitoSignedTx = getOptionalBodyString(req.body, "jitoSignedTx");
     const broadcastAddress = getOptionalBodyString(req.body, "broadcastAddress");
+    const idempotencyKey = buildOnchainIdempotencyKey({
+      userId: user.openId,
+      chainIndex,
+      amount,
+      fromToken: fromTokenSymbol ?? fromTokenAddress,
+      toToken: toTokenSymbol ?? toTokenAddress,
+    });
+    const existingTx = await findOnchainTxByIdempotencyKey(idempotencyKey);
+    if (existingTx && shouldBlockDuplicateExecution(existingTx.phase)) {
+      await appendOnchainTxLog({
+        txId: existingTx.txId,
+        userId: user.openId,
+        eventType: "duplicate",
+        level: "warn",
+        message: "Duplicate Onchain execution request blocked by idempotency guard",
+        context: {
+          idempotencyKey,
+          phase: existingTx.phase,
+        },
+      });
+
+      res.json({
+        user: {
+          openId: user.openId,
+        },
+        txId: existingTx.txId,
+        idempotent: true,
+        ...(existingTx.lastResponse ?? {
+          executionModel: "agent_wallet",
+          phase: existingTx.phase,
+          orderId: existingTx.orderId,
+          txHash: existingTx.txHash,
+          progress: [],
+        }),
+      });
+      return;
+    }
+
     const chainKindRaw = getOptionalBodyString(req.body, "chainKind");
     const chainKind =
       chainKindRaw === "solana"
@@ -178,6 +232,7 @@ export function registerOnchainOsRoutes(app: Express) {
       toToken: toTokenSymbol ?? toTokenAddress,
       amount,
       slippagePercent,
+      idempotencyKey,
       retryCount: 0,
     });
 
@@ -217,6 +272,7 @@ export function registerOnchainOsRoutes(app: Express) {
         phase: result.phase,
         orderId: result.orderId ?? current.orderId,
         txHash: result.txHash ?? current.txHash,
+        lastResponse: result as Record<string, unknown>,
       }));
 
       await appendOnchainTxLog({
@@ -244,6 +300,12 @@ export function registerOnchainOsRoutes(app: Express) {
         ...current,
         phase: "failed",
         lastError: error instanceof Error ? error.message : "Failed to execute swap with Onchain OS",
+        lastResponse: {
+          executionModel: "agent_wallet",
+          phase: "failed",
+          progress: [],
+          error: error instanceof Error ? error.message : "Failed to execute swap with Onchain OS",
+        },
       }));
 
       await appendOnchainTxLog({

@@ -18,6 +18,14 @@ import {
   getOnchainOsConfig,
   previewOnchainSwap,
 } from '../../server/_core/onchain-os';
+import { validateOnchainExecutionRisk } from '../../server/_core/onchain-execution-guard';
+import { buildOnchainIdempotencyKey, shouldBlockDuplicateExecution } from '../../server/_core/onchain-idempotency';
+import {
+  appendOnchainTxLog,
+  createOnchainTxRecord,
+  findOnchainTxByIdempotencyKey,
+  updateOnchainTx,
+} from '../../server/_core/onchain-tx-store';
 
 function resolveRoute(req: VercelRequest) {
   const route = typeof req.query.route === 'string' ? req.query.route.trim() : '';
@@ -152,24 +160,158 @@ async function handleExecute(req: VercelRequest, res: VercelResponse) {
   const payload = validateSwapPayload(body, res);
   if (!payload) return;
 
-  const result = await executeOnchainSwap({
-    ...payload,
-    fromTokenSymbol: getOptionalBodyString(body, 'fromTokenSymbol'),
-    toTokenSymbol: getOptionalBodyString(body, 'toTokenSymbol'),
-    displayAmount: getOptionalBodyString(body, 'displayAmount'),
-    slippagePercent: getOptionalBodyString(body, 'slippagePercent'),
-    signedTx: getOptionalBodyString(body, 'signedTx'),
-    jitoSignedTx: getOptionalBodyString(body, 'jitoSignedTx'),
-    broadcastAddress: getOptionalBodyString(body, 'broadcastAddress'),
-    chainKind: parseChainKind(body),
+  const displayAmount = getOptionalBodyString(body, 'displayAmount');
+  const slippagePercent = getOptionalBodyString(body, 'slippagePercent');
+  const riskError = validateOnchainExecutionRisk({
+    chainIndex: payload.chainIndex,
+    displayAmount,
+    slippagePercent,
+  });
+  if (riskError) {
+    return res.status(400).json({
+      code: riskError.code,
+      msg: riskError.message,
+      success: false,
+      error: riskError.message,
+    });
+  }
+
+  const fromTokenSymbol = getOptionalBodyString(body, 'fromTokenSymbol');
+  const toTokenSymbol = getOptionalBodyString(body, 'toTokenSymbol');
+  const broadcastAddress = getOptionalBodyString(body, 'broadcastAddress');
+  const idempotencyKey = buildOnchainIdempotencyKey({
+    userId: user.openId,
+    chainIndex: payload.chainIndex,
+    amount: payload.amount,
+    fromToken: fromTokenSymbol ?? payload.fromTokenAddress,
+    toToken: toTokenSymbol ?? payload.toTokenAddress,
+  });
+  const existingTx = await findOnchainTxByIdempotencyKey(idempotencyKey);
+  if (existingTx && shouldBlockDuplicateExecution(existingTx.phase)) {
+    await appendOnchainTxLog({
+      txId: existingTx.txId,
+      userId: user.openId,
+      eventType: 'duplicate',
+      level: 'warn',
+      message: 'Duplicate Onchain execution request blocked by idempotency guard',
+      context: {
+        idempotencyKey,
+        phase: existingTx.phase,
+      },
+    });
+
+    return sendSuccess(res, {
+      user: {
+        openId: user.openId,
+      },
+      txId: existingTx.txId,
+      idempotent: true,
+      ...(existingTx.lastResponse ?? {
+        executionModel: 'agent_wallet',
+        phase: existingTx.phase,
+        orderId: existingTx.orderId,
+        txHash: existingTx.txHash,
+        progress: [],
+      }),
+    });
+  }
+
+  const txRecord = await createOnchainTxRecord({
+    userId: user.openId,
+    type: 'swap',
+    phase: 'preview',
+    chainIndex: payload.chainIndex,
+    userWalletAddress: payload.userWalletAddress,
+    broadcastAddress,
+    fromToken: fromTokenSymbol ?? payload.fromTokenAddress,
+    toToken: toTokenSymbol ?? payload.toTokenAddress,
+    amount: payload.amount,
+    slippagePercent,
+    idempotencyKey,
+    retryCount: 0,
   });
 
-  return sendSuccess(res, {
-    user: {
-      openId: user.openId,
+  await appendOnchainTxLog({
+    txId: txRecord.txId,
+    userId: user.openId,
+    eventType: 'create',
+    level: 'info',
+    message: 'Onchain swap execution task created',
+    context: {
+      chainIndex: payload.chainIndex,
+      fromTokenAddress: payload.fromTokenAddress,
+      toTokenAddress: payload.toTokenAddress,
+      amount: payload.amount,
     },
-    ...result,
   });
+
+  try {
+    const result = await executeOnchainSwap({
+      ...payload,
+      fromTokenSymbol,
+      toTokenSymbol,
+      displayAmount,
+      slippagePercent,
+      signedTx: getOptionalBodyString(body, 'signedTx'),
+      jitoSignedTx: getOptionalBodyString(body, 'jitoSignedTx'),
+      broadcastAddress,
+      chainKind: parseChainKind(body),
+    });
+
+    await updateOnchainTx(txRecord.txId, (current) => ({
+      ...current,
+      phase: result.phase,
+      orderId: result.orderId ?? current.orderId,
+      txHash: result.txHash ?? current.txHash,
+      lastResponse: result as Record<string, unknown>,
+    }));
+
+    await appendOnchainTxLog({
+      txId: txRecord.txId,
+      userId: user.openId,
+      eventType: 'execute',
+      level: result.phase === 'failed' ? 'error' : 'info',
+      message: `Onchain swap execution moved to ${result.phase}`,
+      context: {
+        orderId: result.orderId,
+        txHash: result.txHash,
+        phase: result.phase,
+      },
+    });
+
+    return sendSuccess(res, {
+      user: {
+        openId: user.openId,
+      },
+      txId: txRecord.txId,
+      ...result,
+    });
+  } catch (error) {
+    await updateOnchainTx(txRecord.txId, (current) => ({
+      ...current,
+      phase: 'failed',
+      lastError: error instanceof Error ? error.message : 'Failed to execute swap with Onchain OS',
+      lastResponse: {
+        executionModel: 'agent_wallet',
+        phase: 'failed',
+        progress: [],
+        error: error instanceof Error ? error.message : 'Failed to execute swap with Onchain OS',
+      },
+    }));
+
+    await appendOnchainTxLog({
+      txId: txRecord.txId,
+      userId: user.openId,
+      eventType: 'failure',
+      level: 'error',
+      message: 'Onchain swap execution failed',
+      context: {
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+
+    throw error;
+  }
 }
 
 async function handleReceipt(req: VercelRequest, res: VercelResponse) {
