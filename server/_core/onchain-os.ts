@@ -440,6 +440,7 @@ export function getOnchainOsConfig() {
       agentWalletBaseUrl: getAgentWalletBaseUrl(),
     },
     projectIdConfigured: Boolean(getEnv("OKX_PROJECT_ID", "OKX_DEX_PROJECT_ID")),
+    builderCodeConfigured: Boolean(getEnv("EXPO_PUBLIC_XLAYER_BUILDER_CODE", "EXPO_PUBLIC_OKX_XLAYER_BUILDER_CODE", "EXPO_PUBLIC_BUILDER_CODE")),
     referrerAddress: dex.referrerAddress,
     evmFeePercent: dex.evmFeePercent,
     solanaFeePercent: dex.solanaFeePercent,

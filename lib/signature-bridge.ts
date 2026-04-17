@@ -37,6 +37,9 @@ export type PendingSignatureContext = {
     broadcastAddress?: string;
     routeLabel?: string;
     displayAmount?: string;
+    builderCode?: string;
+    builderCodeInjectionMode?: "data_suffix";
+    builderCodeTargetCapability?: "wallet_sendCalls";
     swapTransaction?: Record<string, unknown> | null;
   };
   transfer?: {

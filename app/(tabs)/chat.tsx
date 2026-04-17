@@ -17,6 +17,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
 import { TopTabs } from "@/components/TopTabs";
+import { buildXLayerBuilderCodePayload } from "@/lib/builder-code";
 import {
   executeOnchainSwap,
   getAccountAssets,
@@ -817,6 +818,16 @@ export default function ChatScreen() {
       launchUrl.searchParams.set("chainKind", context.chainKind);
       launchUrl.searchParams.set("ctx", encodedContextId);
       launchUrl.searchParams.set("callbackUrl", callbackUrl);
+
+      if (context.flow === "swap" && context.swap?.builderCode) {
+        launchUrl.searchParams.set("builderCode", context.swap.builderCode);
+        launchUrl.searchParams.set("builderCodeInjectionMode", context.swap.builderCodeInjectionMode || "data_suffix");
+        launchUrl.searchParams.set(
+          "builderCodeTargetCapability",
+          context.swap.builderCodeTargetCapability || "wallet_sendCalls",
+        );
+      }
+
       launchUrl.searchParams.set(
         "payload",
         JSON.stringify(
@@ -826,6 +837,9 @@ export default function ChatScreen() {
                 fromTokenSymbol: context.swap?.fromTokenSymbol || "",
                 toTokenSymbol: context.swap?.toTokenSymbol || "",
                 routeLabel: context.swap?.routeLabel || "",
+                builderCode: context.swap?.builderCode,
+                builderCodeInjectionMode: context.swap?.builderCodeInjectionMode,
+                builderCodeTargetCapability: context.swap?.builderCodeTargetCapability,
                 swap: context.swap ?? null,
               }
             : {
@@ -1001,12 +1015,16 @@ export default function ChatScreen() {
         console.warn("[runSwapFlow] executeOnchainSwap failed (best-effort):", executeError);
       }
 
-      const swapMessages = buildSwapMessages({
+      const builderCodePayload = buildXLayerBuilderCodePayload({
+        chainIndex: fromToken.chainIndex,
+        chainKind,
+      });
+
+      const cardPayload: SwapCardPayload = {
         amount: parsed.intent.amount,
         fromSymbol: parsed.intent.fromSymbol,
         toSymbol: parsed.intent.toSymbol,
         chainKind,
-        seed,
         estimatedReceive,
         estimatedPrice,
         slippage,
@@ -1027,10 +1045,17 @@ export default function ChatScreen() {
                 broadcastAddress: walletAddress,
                 routeLabel,
                 displayAmount: parsed.intent.amount,
+                builderCode: builderCodePayload?.builderCode,
+                builderCodeInjectionMode: builderCodePayload?.injectionMode,
+                builderCodeTargetCapability: builderCodePayload?.targetCapability,
                 swapTransaction: executeResult.swapTransaction,
               }
             : undefined,
         progress: executeResult?.progress,
+      };
+      const swapMessages = buildSwapMessages({
+        ...cardPayload,
+        seed,
       });
 
       if (executeResult) {

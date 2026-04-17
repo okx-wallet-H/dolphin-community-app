@@ -385,6 +385,7 @@ export type OnchainOsConfigResponse = {
       agentWalletBaseUrl: string;
     };
     projectIdConfigured: boolean;
+    builderCodeConfigured: boolean;
     referrerAddress: string;
     evmFeePercent: string;
     solanaFeePercent: string;
