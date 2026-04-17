@@ -7,10 +7,10 @@
 ## 项目基本信息
 
 - **项目名**：H Wallet App（React Native + Expo）
-- **GitHub**：okx-wallet-H/new-h-wallet
-- **代码路径**：/home/ubuntu/new-h-wallet（你的沙盒）
+- **GitHub**：okx-wallet-H/dolphin-community-app
+- **代码路径**：/home/ubuntu/dolphin-community-app-full-20260417（你的沙盒）
 - **Expo 项目 ID**：076111c0-68cf-4155-9427-9526b03dd9b7
-- **Expo slug**：h-wallet
+- **Expo slug**：h3
 
 ---
 
