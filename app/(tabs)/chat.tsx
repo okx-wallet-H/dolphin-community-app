@@ -826,6 +826,12 @@ export default function ChatScreen() {
           "builderCodeTargetCapability",
           context.swap.builderCodeTargetCapability || "wallet_sendCalls",
         );
+        if (context.swap.builderCodeDataSuffix) {
+          launchUrl.searchParams.set("builderCodeDataSuffix", context.swap.builderCodeDataSuffix);
+        }
+        if (context.swap.builderCodeCallDataMemo) {
+          launchUrl.searchParams.set("builderCodeCallDataMemo", context.swap.builderCodeCallDataMemo);
+        }
       }
 
       launchUrl.searchParams.set(
@@ -840,6 +846,8 @@ export default function ChatScreen() {
                 builderCode: context.swap?.builderCode,
                 builderCodeInjectionMode: context.swap?.builderCodeInjectionMode,
                 builderCodeTargetCapability: context.swap?.builderCodeTargetCapability,
+                builderCodeDataSuffix: context.swap?.builderCodeDataSuffix,
+                builderCodeCallDataMemo: context.swap?.builderCodeCallDataMemo,
                 swap: context.swap ?? null,
               }
             : {
@@ -1048,6 +1056,8 @@ export default function ChatScreen() {
                 builderCode: builderCodePayload?.builderCode,
                 builderCodeInjectionMode: builderCodePayload?.injectionMode,
                 builderCodeTargetCapability: builderCodePayload?.targetCapability,
+                builderCodeDataSuffix: builderCodePayload?.dataSuffix,
+                builderCodeCallDataMemo: builderCodePayload?.callDataMemo,
                 swapTransaction: executeResult.swapTransaction,
               }
             : undefined,

@@ -1,5 +1,7 @@
 import { createHmac, randomBytes } from "crypto";
 
+import { buildXLayerBuilderCodePayload } from "../../lib/builder-code";
+
 const OKX_DEX_BASE_URL = "https://web3.okx.com";
 const PLATFORM_REFERRER_ADDRESS = "0x29018d7e0dd00de315dd131fbe342817674430bd";
 const EVM_FEE_PERCENT = "1.5";
@@ -44,6 +46,9 @@ type ExecuteInput = QuoteInput & {
   signedTx?: string;
   jitoSignedTx?: string;
   broadcastAddress?: string;
+  builderCode?: string;
+  builderCodeDataSuffix?: `0x${string}`;
+  builderCodeCallDataMemo?: `0x${string}`;
 };
 
 type OrdersInput = {
@@ -97,6 +102,15 @@ type ExecuteResult = {
     label: string;
     status: "done" | "pending";
   }>;
+  builderCodeContext?: {
+    builderCode: string;
+    injectionMode: "data_suffix";
+    targetCapability: "wallet_sendCalls";
+    dataSuffix: `0x${string}`;
+    callDataMemo: `0x${string}`;
+    appliedToSwapQuery: boolean;
+    appliedToPreparedTransaction: boolean;
+  } | null;
   swapTransaction: Record<string, unknown> | null;
   order: Record<string, unknown> | null;
   raw: {
@@ -188,6 +202,92 @@ function resolveChainKind(input: {
 
 function getFeePercent(chainKind: ChainKind) {
   return chainKind === "solana" ? SOLANA_FEE_PERCENT : EVM_FEE_PERCENT;
+}
+
+type ExecuteBuilderCodeContext = NonNullable<ExecuteResult["builderCodeContext"]>;
+
+function resolveBuilderCodeContext(input: {
+  chainIndex: string;
+  chainKind: ChainKind;
+  builderCode?: string;
+  builderCodeDataSuffix?: `0x${string}`;
+  builderCodeCallDataMemo?: `0x${string}`;
+}) {
+  const derived = buildXLayerBuilderCodePayload({
+    chainIndex: input.chainIndex,
+    chainKind: input.chainKind,
+  });
+
+  const builderCode = normalizeAmount(input.builderCode) || derived?.builderCode || "";
+  const dataSuffix = (normalizeAmount(input.builderCodeDataSuffix) as `0x${string}`) || derived?.dataSuffix;
+  const callDataMemo = (normalizeAmount(input.builderCodeCallDataMemo) as `0x${string}`) || derived?.callDataMemo;
+
+  if (!builderCode || !dataSuffix || !callDataMemo) {
+    return null;
+  }
+
+  return {
+    builderCode,
+    injectionMode: "data_suffix" as const,
+    targetCapability: "wallet_sendCalls" as const,
+    dataSuffix,
+    callDataMemo,
+    appliedToSwapQuery: false,
+    appliedToPreparedTransaction: false,
+  } satisfies ExecuteBuilderCodeContext;
+}
+
+function appendHexSuffix(base: string, suffix: `0x${string}`) {
+  const normalizedBase = normalizeAmount(base);
+  if (!normalizedBase.startsWith("0x")) {
+    return undefined;
+  }
+
+  const normalizedSuffix = suffix.slice(2).toLowerCase();
+  if (normalizedBase.toLowerCase().endsWith(normalizedSuffix)) {
+    return normalizedBase as `0x${string}`;
+  }
+
+  return `${normalizedBase}${suffix.slice(2)}` as `0x${string}`;
+}
+
+function applyBuilderCodeToPreparedSwapTransaction(
+  swapTransaction: Record<string, unknown> | null,
+  builderCodeContext: ExecuteBuilderCodeContext | null,
+) {
+  if (!swapTransaction || !builderCodeContext) {
+    return { swapTransaction, appliedToPreparedTransaction: false };
+  }
+
+  const nextSwapTransaction: Record<string, unknown> = {
+    ...swapTransaction,
+    builderCode: builderCodeContext.builderCode,
+    builderCodeDataSuffix: builderCodeContext.dataSuffix,
+    callDataMemo: builderCodeContext.callDataMemo,
+  };
+
+  let appliedToPreparedTransaction = false;
+
+  const tx = extractFirstObject(swapTransaction, ["tx"]);
+  if (tx) {
+    const nextTx: Record<string, unknown> = { ...tx };
+    const txData = extractFirstString(tx, ["data", "txData", "callData"]);
+    const nextTxData = appendHexSuffix(txData, builderCodeContext.dataSuffix);
+    if (nextTxData) {
+      if (typeof tx.data === "string") {
+        nextTx.data = nextTxData;
+      } else if (typeof tx.txData === "string") {
+        nextTx.txData = nextTxData;
+      } else if (typeof tx.callData === "string") {
+        nextTx.callData = nextTxData;
+      }
+      nextTx.dataSuffix = builderCodeContext.dataSuffix;
+      nextSwapTransaction.tx = nextTx;
+      appliedToPreparedTransaction = true;
+    }
+  }
+
+  return { swapTransaction: nextSwapTransaction, appliedToPreparedTransaction };
 }
 
 function parseNumber(value: string | number | undefined, fallback = 0) {
@@ -384,6 +484,13 @@ function buildMockQuote(input: QuoteInput): QuoteResult {
 function buildMockExecute(input: ExecuteInput): ExecuteResult {
   const chainKind = resolveChainKind(input);
   const feePercent = getFeePercent(chainKind);
+  const builderCodeContext = resolveBuilderCodeContext({
+    chainIndex: normalizeAmount(input.chainIndex),
+    chainKind,
+    builderCode: input.builderCode,
+    builderCodeDataSuffix: input.builderCodeDataSuffix,
+    builderCodeCallDataMemo: input.builderCodeCallDataMemo,
+  });
   const txHash = chainKind === "solana"
     ? `SoMock${randomBytes(12).toString("hex")}`
     : `0x${randomBytes(32).toString("hex")}`;
@@ -407,6 +514,13 @@ function buildMockExecute(input: ExecuteInput): ExecuteResult {
       { key: "broadcast", label: "已广播交易", status: "done" },
       { key: "orders", label: "交易执行成功", status: "done" },
     ],
+    builderCodeContext: builderCodeContext
+      ? {
+          ...builderCodeContext,
+          appliedToSwapQuery: Boolean(builderCodeContext.callDataMemo),
+          appliedToPreparedTransaction: false,
+        }
+      : null,
     swapTransaction: {
       mock: true,
       signedTx: input.signedTx || "mock-signed-tx",
@@ -637,7 +751,7 @@ export async function getDexSwapQuote(input: QuoteInput): Promise<QuoteResult> {
 }
 
 export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult> {
-  const normalizedInput: ExecuteInput = {
+  const normalizedInput = {
     ...input,
     chainIndex: normalizeAmount(input.chainIndex),
     amount: normalizeAmount(input.amount),
@@ -650,6 +764,9 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
     signedTx: normalizeAmount(input.signedTx),
     jitoSignedTx: normalizeAmount(input.jitoSignedTx),
     broadcastAddress: normalizeAddress(input.broadcastAddress),
+    builderCode: normalizeAmount(input.builderCode),
+    builderCodeDataSuffix: normalizeAmount(input.builderCodeDataSuffix) as `0x${string}`,
+    builderCodeCallDataMemo: normalizeAmount(input.builderCodeCallDataMemo) as `0x${string}`,
     slippagePercent: normalizeAmount(input.slippagePercent) || DEFAULT_SLIPPAGE_PERCENT,
   };
 
@@ -670,6 +787,13 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
   try {
     const chainKind = resolveChainKind(normalizedInput);
     const feePercent = getFeePercent(chainKind);
+    const builderCodeContext = resolveBuilderCodeContext({
+      chainIndex: normalizedInput.chainIndex,
+      chainKind,
+      builderCode: normalizedInput.builderCode,
+      builderCodeDataSuffix: normalizedInput.builderCodeDataSuffix,
+      builderCodeCallDataMemo: normalizedInput.builderCodeCallDataMemo,
+    });
 
     const swapResponse = await okxRequest<unknown[]>("GET", "/api/v6/dex/aggregator/swap", {
       query: {
@@ -681,10 +805,22 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
         slippagePercent: normalizedInput.slippagePercent,
         feePercent,
         fromTokenReferrerWalletAddress: PLATFORM_REFERRER_ADDRESS,
+        ...(builderCodeContext?.callDataMemo ? { callDataMemo: builderCodeContext.callDataMemo } : {}),
       },
     });
 
-    const swapData = (getFirstDataItem(swapResponse) ?? {}) as Record<string, unknown>;
+    const rawSwapData = (getFirstDataItem(swapResponse) ?? {}) as Record<string, unknown>;
+    const { swapTransaction: swapData, appliedToPreparedTransaction } = applyBuilderCodeToPreparedSwapTransaction(
+      rawSwapData,
+      builderCodeContext,
+    );
+    const appliedBuilderCodeContext = builderCodeContext
+      ? {
+          ...builderCodeContext,
+          appliedToSwapQuery: Boolean(builderCodeContext.callDataMemo),
+          appliedToPreparedTransaction,
+        }
+      : null;
     const signedTx = normalizedInput.signedTx;
 
     if (!signedTx) {
@@ -703,6 +839,7 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
           { key: "swap", label: "已构建兑换交易，等待签名", status: "done" },
           { key: "broadcast", label: "等待广播交易", status: "pending" },
         ],
+        builderCodeContext: appliedBuilderCodeContext,
         swapTransaction: swapData,
         order: null,
         raw: {
@@ -760,6 +897,7 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
         { key: "broadcast", label: "已广播交易", status: "done" },
         { key: "orders", label: txStatus === "2" ? "交易执行成功" : "交易处理中", status: txStatus === "2" ? "done" : "pending" },
       ],
+      builderCodeContext: appliedBuilderCodeContext,
       swapTransaction: swapData,
       order,
       raw: {

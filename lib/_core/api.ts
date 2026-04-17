@@ -348,6 +348,15 @@ export type DexExecuteResponse = {
     label: string;
     status: 'done' | 'pending';
   }[];
+  builderCodeContext?: {
+    builderCode: string;
+    injectionMode: 'data_suffix';
+    targetCapability: 'wallet_sendCalls';
+    dataSuffix: `0x${string}`;
+    callDataMemo: `0x${string}`;
+    appliedToSwapQuery: boolean;
+    appliedToPreparedTransaction: boolean;
+  } | null;
   swapTransaction: Record<string, unknown> | null;
   order: Record<string, unknown> | null;
   raw: {
@@ -565,6 +574,9 @@ type DexExecutePayload = DexQuotePayload & {
   signedTx?: string;
   jitoSignedTx?: string;
   broadcastAddress?: string;
+  builderCode?: string;
+  builderCodeDataSuffix?: `0x${string}`;
+  builderCodeCallDataMemo?: `0x${string}`;
 };
 
 type RequestHeaders = Record<string, string>;

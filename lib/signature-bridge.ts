@@ -40,6 +40,8 @@ export type PendingSignatureContext = {
     builderCode?: string;
     builderCodeInjectionMode?: "data_suffix";
     builderCodeTargetCapability?: "wallet_sendCalls";
+    builderCodeDataSuffix?: `0x${string}`;
+    builderCodeCallDataMemo?: `0x${string}`;
     swapTransaction?: Record<string, unknown> | null;
   };
   transfer?: {
