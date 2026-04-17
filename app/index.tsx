@@ -49,12 +49,12 @@ const CODE_PLACEHOLDER = "请输入验证码";
 const FEATURE_CARDS = [
   {
     key: "ai-wallet",
-    title: "智能对话",
+    title: "社区对话",
     icon: "chat-processing",
   },
   {
     key: "agent-task",
-    title: "自动任务",
+    title: "智能任务",
     icon: "robot-excited-outline",
   },
   {
@@ -135,7 +135,7 @@ export default function LoginRoute() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [statusText, setStatusText] = useState(
-    "输入邮箱并获取验证码，即可进入 H Wallet。首次登录会自动创建智能钱包。",
+    "输入邮箱并获取验证码，即可进入海豚社区。首次登录会自动完成账户初始化。",
   );
   const [statusTone, setStatusTone] = useState<StatusTone>("default");
   const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -279,7 +279,7 @@ export default function LoginRoute() {
       setStatusTone("success");
       setStatusText(
         result.mockMode
-          ? "演示模式验证成功，正在进入首页。"
+          ? "验证成功，正在初始化首页。"
           : "验证成功，正在进入首页。",
       );
       router.replace("/(tabs)/chat");
@@ -336,9 +336,9 @@ export default function LoginRoute() {
           <View style={styles.container}>
             <View style={styles.heroBlock}>
               <LoginLogo />
-              <Text style={styles.brandTitle}>H Wallet</Text>
+              <Text style={styles.brandTitle}>海豚社区</Text>
               <Text style={styles.heroSubtitle}>
-                对话式 Web3 钱包
+                对话式智能钱包社区
               </Text>
             </View>
 
@@ -349,7 +349,7 @@ export default function LoginRoute() {
                 </View>
                 <Text style={styles.otpNoticeTitle}>无需密码，验证即进入</Text>
                 <Text style={styles.otpNoticeDesc}>
-                  输入邮箱获取验证码，完成验证后自动登录；如果是首次登录，会同时创建你的智能钱包。
+                  输入邮箱获取验证码，完成验证后自动登录；如果是首次登录，会自动完成账户初始化并进入主页。
                 </Text>
               </View>
 
@@ -455,7 +455,7 @@ export default function LoginRoute() {
             </View>
 
             <Text style={styles.footerText}>
-              安全托管您的会话，重启应用后自动恢复登录状态。
+              安全托管您的会话与登录状态，重启应用后可自动恢复访问。
             </Text>
           </View>
         </ScrollView>

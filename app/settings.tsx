@@ -87,13 +87,13 @@ export default function SettingsRoute() {
         <View style={styles.profileSection}>
           <LinearGradient colors={['#B58CFF', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatarOuter}>
             <View style={styles.avatarInner}>
-              <Text style={styles.avatarLetter}>H</Text>
+              <Text style={styles.avatarLetter}>海</Text>
             </View>
           </LinearGradient>
-          <Text style={styles.profileName}>海豚用户</Text>
-          <Text style={styles.profileEmail}>hello@hwallet.ai</Text>
+          <Text style={styles.profileName}>海豚社区账号</Text>
+          <Text style={styles.profileEmail}>当前登录邮箱将在会话恢复后展示</Text>
           <LinearGradient colors={['#EBD18A', '#C19A45', '#EFD9A5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.memberBadge}>
-            <Text style={styles.memberBadgeText}>旗舰会员</Text>
+            <Text style={styles.memberBadgeText}>已启用安全会话</Text>
           </LinearGradient>
         </View>
 

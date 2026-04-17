@@ -179,7 +179,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: "welcome-1",
     role: "assistant",
-    title: "H Wallet 智能助手",
+    title: "海豚社区智能助手",
     content:
       "我已经接入 OKX OnchainOS 的真实能力。你可以直接让我查价格、看资产、找赚币产品，或继续发起 Swap 等链上操作。",
     meta: "当前对话页优先走真实接口，调不通会直接返回错误提示",
@@ -2084,7 +2084,7 @@ export default function ChatScreen() {
                 <TextInput
                   value={input}
                   onChangeText={setInput}
-                  placeholder="说说你想让 H Wallet 帮你做什么"
+                  placeholder="说说你想让海豚社区帮你做什么"
                   placeholderTextColor="rgba(148,163,184,0.72)"
                   multiline
                   returnKeyType="done"

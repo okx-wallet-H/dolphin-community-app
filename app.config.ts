@@ -6,7 +6,7 @@ import type { ExpoConfig } from "expo/config";
 // e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
 // Bundle ID can only contain letters, numbers, and dots
 // Android requires each dot-separated segment to start with a letter
-const rawBundleId = "space.manus.h.wallet.ui.rebuild.t20260414001925";
+const rawBundleId = "space.manus.dolphin.community.app.t20260417000100";
 const bundleId =
   rawBundleId
     .replace(/[-_]/g, ".") // Replace hyphens/underscores with dots
@@ -28,8 +28,8 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // 应用品牌信息，直接在此处维护
-  appName: "H Wallet",
-  appSlug: "h3",
+  appName: "海豚社区",
+  appSlug: "dolphin-community",
   // 应用 Logo 地址；留空时使用 assets/images/icon.png
   logoUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310519663458603911/AQ7DNFW2AtZXchZVZkUYdL/h-wallet-icon-UTsNtRdFQEnoWpyzgewLzd.png",
   scheme: schemeFromBundleId,
@@ -60,7 +60,7 @@ const config: ExpoConfig = {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#060B14",
+      backgroundColor: "#F6F3FF",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -109,9 +109,9 @@ const config: ExpoConfig = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#060B14",
+        backgroundColor: "#F6F3FF",
         dark: {
-          backgroundColor: "#060B14",
+          backgroundColor: "#F6F3FF",
         },
       },
     ],

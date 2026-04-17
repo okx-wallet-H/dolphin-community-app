@@ -59,12 +59,12 @@ export default function ProfileScreen() {
               <View style={styles.profileMainRow}>
                 <View style={styles.avatarOuter}>
                   <View style={styles.avatarInner}>
-                    <Text style={styles.avatarText}>HW</Text>
+                    <Text style={styles.avatarText}>海</Text>
                   </View>
                 </View>
 
                 <View style={styles.profileInfoWrap}>
-                  <Text style={styles.profileName}>H Wallet 用户</Text>
+                  <Text style={styles.profileName}>海豚社区用户</Text>
                   <Text style={styles.profileAddress}>0xA8F2...9C31</Text>
                   <View style={styles.securityPill}>
                     <Text style={styles.securityPillText}>账户安全等级：高</Text>
