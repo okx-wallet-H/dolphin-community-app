@@ -369,6 +369,87 @@ export type DexOrdersResponse = {
   raw?: unknown;
 };
 
+export type OnchainOsConfigResponse = {
+  success: true;
+  user: {
+    openId: string;
+    email: string | null;
+  };
+  onchainOs: {
+    providerMode: 'okx' | 'mock';
+    executionModel: 'agent_wallet';
+    authMode: 'api_key' | 'mock';
+    baseUrl: string;
+    endpoints: {
+      onchainBaseUrl: string;
+      agentWalletBaseUrl: string;
+    };
+    projectIdConfigured: boolean;
+    referrerAddress: string;
+    evmFeePercent: string;
+    solanaFeePercent: string;
+    defaultSlippagePercent: string;
+    capabilities: {
+      walletEmailLogin: boolean;
+      preview: boolean;
+      execute: boolean;
+      receipt: boolean;
+      assets: boolean;
+      simulate: boolean;
+      broadcast: boolean;
+    };
+    compatibility: {
+      legacyDexRoutesAvailable: boolean;
+      legacySignatureBridgeRetained: boolean;
+    };
+  };
+};
+
+export type OnchainTxPhase = 'preview' | 'awaiting_confirmation' | 'executing' | 'success' | 'failed';
+
+export type OnchainPreviewResponse = DexQuoteResponse & {
+  executionModel: 'agent_wallet';
+  phase: 'preview';
+  progress: {
+    key: string;
+    label: string;
+    status: 'done' | 'pending';
+  }[];
+};
+
+export type OnchainExecuteResponse = Omit<DexExecuteResponse, 'status' | 'requiresSignature'> & {
+  executionModel: 'agent_wallet';
+  phase: OnchainTxPhase;
+  progress: {
+    key: string;
+    label: string;
+    status: 'done' | 'pending';
+  }[];
+};
+
+export type OnchainExecutionReceiptResponse = DexOrdersResponse & {
+  executionModel: 'agent_wallet';
+  phase: Extract<OnchainTxPhase, 'executing' | 'success' | 'failed'>;
+};
+
+export type OnchainAssetsResponse = {
+  success: true;
+  user: {
+    openId: string;
+  };
+  executionModel: 'agent_wallet';
+  source: 'okx-onchain' | 'mock';
+  mockMode: boolean;
+  totalAssetValue: string;
+  walletAddresses: {
+    chainIndex: string;
+    chainName: string;
+    address: string;
+    assets: WalletAssetItem[];
+  }[];
+  updatedAt: string;
+};
+
 export type StoredWalletSnapshot = {
   email?: string;
   evmAddress?: string;
@@ -1347,6 +1428,30 @@ export async function getDexConfig(): Promise<DexConfigResponse> {
   return (await apiCall('/api/dex/config')) as DexConfigResponse;
 }
 
+export async function getOnchainOsConfig(): Promise<OnchainOsConfigResponse> {
+  return (await apiCall('/api/onchain/config')) as OnchainOsConfigResponse;
+}
+
+export async function getOnchainAssets(params: {
+  address: string;
+  chains?: string;
+  filter?: string;
+  excludeRiskToken?: string;
+}): Promise<OnchainAssetsResponse> {
+  const query = new URLSearchParams();
+  query.append('address', params.address);
+  if (params.chains) {
+    query.append('chains', params.chains);
+  }
+  if (params.filter) {
+    query.append('filter', params.filter);
+  }
+  if (params.excludeRiskToken) {
+    query.append('excludeRiskToken', params.excludeRiskToken);
+  }
+  return (await apiCall(`/api/onchain/assets?${query.toString()}`)) as OnchainAssetsResponse;
+}
+
 async function getOkxPublicTickerPrice(symbol: string): Promise<{ price: number; updateTime: string } | null> {
   const instId = MARKET_OKX_INST_ID_MAP[symbol];
   if (!instId) {
@@ -1760,11 +1865,25 @@ export async function getDexSwapQuote(payload: DexQuotePayload): Promise<DexQuot
   })) as DexQuoteResponse;
 }
 
+export async function previewOnchainSwap(payload: DexQuotePayload): Promise<OnchainPreviewResponse> {
+  return (await apiCall('/api/onchain/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })) as OnchainPreviewResponse;
+}
+
 export async function executeDexSwap(payload: DexExecutePayload): Promise<DexExecuteResponse> {
   return (await apiCall('/api/dex/execute', {
     method: 'POST',
     body: JSON.stringify(payload),
   })) as DexExecuteResponse;
+}
+
+export async function executeOnchainSwap(payload: DexExecutePayload): Promise<OnchainExecuteResponse> {
+  return (await apiCall('/api/onchain/execute', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })) as OnchainExecuteResponse;
 }
 
 export async function getDexSwapOrders(params: { address: string; chainIndex: string; orderId?: string; limit?: string }): Promise<DexOrdersResponse> {
@@ -1778,6 +1897,28 @@ export async function getDexSwapOrders(params: { address: string; chainIndex: st
     query.append("limit", params.limit);
   }
   return (await apiCall(`/api/dex/orders?${query.toString()}`)) as DexOrdersResponse;
+}
+
+export async function getOnchainExecutionReceipt(params: {
+  address: string;
+  chainIndex: string;
+  orderId?: string;
+  txStatus?: string;
+  limit?: string;
+}): Promise<OnchainExecutionReceiptResponse> {
+  const query = new URLSearchParams();
+  query.append('address', params.address);
+  query.append('chainIndex', params.chainIndex);
+  if (params.orderId) {
+    query.append('orderId', params.orderId);
+  }
+  if (params.txStatus) {
+    query.append('txStatus', params.txStatus);
+  }
+  if (params.limit) {
+    query.append('limit', params.limit);
+  }
+  return (await apiCall(`/api/onchain/receipt?${query.toString()}`)) as OnchainExecutionReceiptResponse;
 }
 
 export type StrategyRawToolResult = Record<string, unknown>;

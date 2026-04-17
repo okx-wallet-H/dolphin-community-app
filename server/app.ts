@@ -63,6 +63,11 @@ export function createApp() {
     registerDexSwapRoutes(app);
   });
 
+  safeRegister(app, "onchain os routes", () => {
+    const { registerOnchainOsRoutes } = require("./_core/onchain-os-routes");
+    registerOnchainOsRoutes(app);
+  });
+
   safeRegister(app, "chat ai routes", () => {
     const { registerChatAiRoutes } = require("./_core/chat-ai-routes");
     registerChatAiRoutes(app);

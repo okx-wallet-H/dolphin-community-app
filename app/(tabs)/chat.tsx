@@ -18,21 +18,22 @@ import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
 import { TopTabs } from "@/components/TopTabs";
 import {
-  executeDexSwap,
+  executeOnchainSwap,
   getAccountAssets,
-  getDexSwapOrders,
-  getDexSwapQuote,
   getMarketSnapshotByMcp,
   getMemeScanListByMcp,
-  getSmartMoneyLeaderboardByMcp,
+  getOnchainExecutionReceipt,
   parseChatAiIntent,
   parseDexSwapIntent,
+  previewOnchainSwap,
   searchDeFiProductsByMcp,
+  getSmartMoneyLeaderboardByMcp,
   type AgentWalletAssetsResponse,
   type ChatAiIntentResponse,
   type DeFiProductItem,
   type DexChainKind,
   type MarketSnapshot,
+  type OnchainTxPhase,
   type StoredWalletSnapshot,
 } from "@/lib/_core/api";
 import {
@@ -95,7 +96,7 @@ type SwapCardPayload = {
   slippage: string;
   priceImpact: string;
   routeLabel: string;
-  requiresSignature?: boolean;
+  phase: OnchainTxPhase;
   signatureRequest?: NonNullable<PendingSignatureContext["swap"]>;
   progress?: {
     key: string;
@@ -110,7 +111,7 @@ type TransferCardPayload = {
   chainKind: DexChainKind;
   fromAddress: string;
   toAddress: string;
-  status: "prepared" | "broadcasted" | "success";
+  phase: OnchainTxPhase;
   progress: {
     key: string;
     label: string;
@@ -437,7 +438,7 @@ function buildSwapMessages(params: {
   slippage: string;
   priceImpact: string;
   routeLabel: string;
-  requiresSignature?: boolean;
+  phase: OnchainTxPhase;
   signatureRequest?: NonNullable<PendingSignatureContext["swap"]>;
   progress?: {
     key: string;
@@ -456,7 +457,7 @@ function buildSwapMessages(params: {
     slippage,
     priceImpact,
     routeLabel,
-    requiresSignature,
+    phase,
     signatureRequest,
     progress,
   } = params;
@@ -473,9 +474,9 @@ function buildSwapMessages(params: {
       id: `assistant-${seed}-swap-card`,
       role: "assistant",
       title: "Swap 确认卡片",
-      content: `已通过 /api/okx/mcp 调用 get_dex_quote 获取 ${fromSymbol} → ${toSymbol} 的实时报价。`,
+      content: `已通过 OKX Onchain OS 生成 ${fromSymbol} → ${toSymbol} 的执行确认摘要。`,
       tone: "success",
-      meta: `数据来源：OKX OnchainOS MCP · 预估到账 ${estimatedReceive} ${toSymbol} · 价格影响 ${priceImpact}`,
+      meta: `数据来源：OKX Onchain OS · 预估到账 ${estimatedReceive} ${toSymbol} · 价格影响 ${priceImpact}`,
       card: {
         kind: "swap",
         payload: {
@@ -488,7 +489,7 @@ function buildSwapMessages(params: {
           slippage,
           priceImpact,
           routeLabel,
-          requiresSignature,
+          phase,
           signatureRequest,
           progress,
         },
@@ -505,7 +506,7 @@ function buildTransferMessages(
   const fromAddress = getPrimaryWalletAddress(wallet, intent.chainKind);
   const progress = [
     { key: "prepare", label: "已整理转账请求", status: "done" as const },
-    { key: "sign", label: "等待签名确认", status: "pending" as const },
+    { key: "confirm", label: "等待执行确认", status: "pending" as const },
     { key: "broadcast", label: "等待广播交易", status: "pending" as const },
   ];
 
@@ -523,18 +524,18 @@ function buildTransferMessages(
       title: "转账准备状态",
       content: `我已经整理好本次转账所需的关键信息，当前可以先由你确认执行条件。\n发送地址：${maskAddress(fromAddress)}\n接收地址：${maskAddress(intent.address)}\n金额：${intent.amount} ${intent.symbol}`,
       tone: "warning",
-      meta: "当前仍是待广播状态，下一步将补签名回传与链上广播承接。",
+      meta: "当前仍是待执行状态，下一步将进入 Agent Wallet 确认与链上广播承接。",
       card: {
         kind: "transfer",
         payload: {
-          amount: intent.amount,
-          symbol: intent.symbol,
-          chainKind: intent.chainKind,
-          fromAddress,
-          toAddress: intent.address,
-          status: "prepared",
-          progress,
-        },
+            amount: intent.amount,
+            symbol: intent.symbol,
+            chainKind: intent.chainKind,
+            fromAddress,
+            toAddress: intent.address,
+            phase: "awaiting_confirmation",
+            progress,
+          },
       },
     },
   ];
@@ -801,8 +802,8 @@ export default function ChatScreen() {
           title: summary.title,
           content: summary.content,
           meta: SIGNATURE_PORTAL_URL
-            ? "已生成回调地址，正在打开外部钱包签名页。"
-            : "已生成签名回调地址，但当前环境尚未配置外部钱包签名入口。",
+            ? "已生成确认回调地址，正在打开外部执行确认页。"
+            : "已生成执行确认回调地址，但当前环境尚未配置 Agent Wallet 确认入口。",
           tone: SIGNATURE_PORTAL_URL ? "default" : "warning",
         },
       ]);
@@ -840,12 +841,12 @@ export default function ChatScreen() {
           {
             id: `assistant-signature-launch-error-${context.id}`,
             role: "assistant",
-            title: "签名页暂未打开",
+            title: "确认页暂未打开",
             content:
               launchError instanceof Error
                 ? launchError.message
-                : "已保存待签名上下文，但当前暂时无法打开外部钱包签名页。",
-            meta: "待签名上下文已保留，你可以在签名入口配置完成后再次发起。",
+                : "已保存待确认上下文，但当前暂时无法打开外部执行确认页。",
+            meta: "待确认上下文已保留，你可以在 Agent Wallet 确认入口配置完成后再次发起。",
             tone: "warning",
           },
         ]);
@@ -862,7 +863,7 @@ export default function ChatScreen() {
         chainKind: transferCard.chainKind,
         createdAt: new Date().toISOString(),
         source: "chat",
-        draftPrompt: `我正在处理 ${transferCard.amount} ${transferCard.symbol} 转账签名，请在返回后继续广播与回执承接。`,
+        draftPrompt: `我正在处理 ${transferCard.amount} ${transferCard.symbol} 转账确认，请在返回后继续广播与回执承接。`,
         progress: transferCard.progress,
         transfer: {
           amount: transferCard.amount,
@@ -873,8 +874,8 @@ export default function ChatScreen() {
       };
 
       await startSignatureFlow(context, {
-        title: "已准备转账签名",
-        content: `我已经为这笔 ${transferCard.amount} ${transferCard.symbol} 转账保存待续跑上下文，接下来会把你带到外部钱包签名页。`,
+        title: "已准备转账确认",
+        content: `我已经为这笔 ${transferCard.amount} ${transferCard.symbol} 转账保存待续跑上下文，接下来会把你带到 Agent Wallet 执行确认页。`,
       });
     },
     [startSignatureFlow],
@@ -887,9 +888,9 @@ export default function ChatScreen() {
           {
             id: `assistant-swap-signature-missing-${Date.now()}`,
             role: "assistant",
-            title: "待签名交易尚未准备完成",
-            content: "当前这张兑换卡片还没有拿到完整的待签名交易数据，请先重新获取报价或重新整理一次执行请求。",
-            meta: "需要同时具备待签名交易与完整兑换参数，才能进入签名回调续跑。",
+            title: "待确认交易尚未准备完成",
+            content: "当前这张兑换卡片还没有拿到完整的待确认执行数据，请先重新获取报价或重新整理一次执行请求。",
+            meta: "需要同时具备待确认执行数据与完整兑换参数，才能进入确认回调续跑。",
             tone: "warning",
           },
         ]);
@@ -902,14 +903,14 @@ export default function ChatScreen() {
         chainKind: swapCard.chainKind,
         createdAt: new Date().toISOString(),
         source: "chat",
-        draftPrompt: `我正在处理 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol} 的签名，请在返回后继续广播与订单查询。`,
+        draftPrompt: `我正在处理 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol} 的执行确认，请在返回后继续广播与订单查询。`,
         progress: swapCard.progress,
         swap: swapCard.signatureRequest,
       };
 
       await startSignatureFlow(context, {
-        title: "已准备兑换签名",
-        content: `我已经为这笔 ${swapCard.amount} ${swapCard.fromSymbol} → ${swapCard.toSymbol} 兑换保存待续跑上下文，接下来会把你带到外部钱包签名页。`,
+        title: "已准备兑换确认",
+        content: `我已经为这笔 ${swapCard.amount} ${swapCard.fromSymbol} → ${swapCard.toSymbol} 兑换保存待续跑上下文，接下来会把你带到 Agent Wallet 执行确认页。`,
       });
     },
     [appendMessages, startSignatureFlow],
@@ -961,7 +962,7 @@ export default function ChatScreen() {
 
       const slippage = "0.5";
       const rawAmount = toRawAmount(parsed.intent.amount, fromToken.decimals);
-      const quoteResult = await getDexSwapQuote({
+      const quoteResult = await previewOnchainSwap({
         chainIndex: fromToken.chainIndex,
         amount: rawAmount,
         fromTokenAddress: fromToken.address,
@@ -979,12 +980,12 @@ export default function ChatScreen() {
         parsed.intent.toSymbol,
         parsed.intent.fromSymbol,
       );
-      const routeLabel = "OKX 聚合路由";
+      const routeLabel = "OKX Onchain OS 执行链路";
       const priceImpact = "0%";
 
-      let executeResult: Awaited<ReturnType<typeof executeDexSwap>> | null = null;
+      let executeResult: Awaited<ReturnType<typeof executeOnchainSwap>> | null = null;
       try {
-        executeResult = await executeDexSwap({
+        executeResult = await executeOnchainSwap({
           chainIndex: fromToken.chainIndex,
           amount: rawAmount,
           fromTokenAddress: fromToken.address,
@@ -996,7 +997,7 @@ export default function ChatScreen() {
           slippagePercent: slippage,
         });
       } catch (executeError) {
-        console.warn("[runSwapFlow] executeDexSwap failed (best-effort):", executeError);
+        console.warn("[runSwapFlow] executeOnchainSwap failed (best-effort):", executeError);
       }
 
       const swapMessages = buildSwapMessages({
@@ -1010,9 +1011,9 @@ export default function ChatScreen() {
         slippage,
         priceImpact,
         routeLabel,
-        requiresSignature: executeResult?.requiresSignature,
+        phase: executeResult?.phase ?? "preview",
         signatureRequest:
-          executeResult?.requiresSignature && executeResult.swapTransaction
+          executeResult?.phase === "awaiting_confirmation" && executeResult.swapTransaction
             ? {
                 chainIndex: fromToken.chainIndex,
                 amount: rawAmount,
@@ -1032,23 +1033,34 @@ export default function ChatScreen() {
       });
 
       if (executeResult) {
-        const isSwapSettled = executeResult.status === "success";
-        const isAwaitingSignature = executeResult.requiresSignature || executeResult.status === "prepared";
+        const isSwapSettled = executeResult.phase === "success";
+        const isAwaitingConfirmation = executeResult.phase === "awaiting_confirmation";
+        const isSwapFailed = executeResult.phase === "failed";
         swapMessages.push({
           id: `assistant-${seed}-swap-receipt`,
           role: "assistant",
-          title: isAwaitingSignature ? "兑换待签名状态" : isSwapSettled ? "兑换执行回执" : "兑换处理状态",
-          content: isAwaitingSignature
-            ? `本次兑换已经生成待签名交易，下一步请先完成钱包签名，再回到对话主线程继续广播与订单状态查询。`
+          title: isAwaitingConfirmation
+            ? "兑换待确认状态"
+            : isSwapSettled
+              ? "兑换执行回执"
+              : isSwapFailed
+                ? "兑换执行失败"
+                : "兑换处理状态",
+          content: isAwaitingConfirmation
+            ? "本次兑换已经生成待确认执行请求，下一步请先完成 Agent Wallet 确认，再回到对话主线程继续广播与订单状态查询。"
             : isSwapSettled
               ? `本次兑换已经进入完成回执阶段，订单号 ${executeResult.orderId}，你可以继续查看链上结果与成交细节。`
-              : `本次兑换已经提交至执行链路，订单号 ${executeResult.orderId}，当前仍在等待链上进一步确认。`,
-          tone: isAwaitingSignature ? "warning" : "success",
-          meta: isAwaitingSignature
-            ? "当前已构建待签名交易，外部钱包签名入口已接入卡片动作按钮。"
+              : isSwapFailed
+                ? "本次兑换未能完成执行，请重新检查余额、滑点与链路状态后再次发起。"
+                : `本次兑换已经提交至执行链路，订单号 ${executeResult.orderId}，当前仍在等待链上进一步确认。`,
+          tone: isAwaitingConfirmation ? "warning" : isSwapFailed ? "danger" : "success",
+          meta: isAwaitingConfirmation
+            ? "当前已构建待确认执行请求，Agent Wallet 确认入口已接入卡片动作按钮。"
             : executeResult.txHash
               ? `链上回执：${executeResult.txHash}`
-              : "当前暂未返回链上回执，系统会在后续接入轮询后继续更新。",
+              : isSwapFailed
+                ? "当前未返回有效链上回执，后续将结合持久化任务与轮询恢复进一步补强。"
+                : "当前暂未返回链上回执，系统会在后续接入轮询后继续更新。",
         });
       }
 
@@ -1202,17 +1214,17 @@ export default function ChatScreen() {
     assistantMessages.push({
       id: `assistant-signature-${signatureKey}-entry`,
       role: "assistant",
-      title: `${flowLabel}签名结果已返回`,
+      title: `${flowLabel}确认结果已返回`,
       content:
         status === "cancelled"
-          ? `我已经收到你刚刚取消的${flowLabel}签名结果。当前不会继续广播，我会先回到对话主线程，帮你重新检查条件与风险。`
+          ? `我已经收到你刚刚取消的${flowLabel}确认结果。当前不会继续广播，我会先回到对话主线程，帮你重新检查条件与风险。`
           : status === "error" || error
-            ? `我已经收到${flowLabel}签名回传异常，当前先不继续执行。你可以继续让我复核条件，或者稍后重新发起。`
-            : `我已经接住这次${flowLabel}签名结果，并已恢复到对话主线程。下一步会继续往广播与链上回执方向承接。`,
+            ? `我已经收到${flowLabel}确认回传异常，当前先不继续执行。你可以继续让我复核条件，或者稍后重新发起。`
+            : `我已经接住这次${flowLabel}确认结果，并已恢复到对话主线程。下一步会继续往广播与链上回执方向承接。`,
       meta: txHash
         ? `当前回执：${txHash}`
         : signedTx || jitoSignedTx
-          ? "已接收到签名结果，广播续跑能力正在接入中"
+          ? "已接收到执行确认结果，广播续跑能力正在接入中"
           : "当前仅完成回调承接，后续会继续接上广播续跑与订单状态更新",
       tone: status === "error" || error ? "danger" : status === "cancelled" ? "warning" : "success",
     });
@@ -1224,11 +1236,11 @@ export default function ChatScreen() {
         title: `${flowLabel}主线程续跑状态`,
         content:
           status === "error" || error
-            ? `本次${flowLabel}签名结果已被记录，但当前回调阶段返回了异常信息：${error || "未知错误"}。建议先重新核对参数后再继续。`
+            ? `本次${flowLabel}确认结果已被记录，但当前回调阶段返回了异常信息：${error || "未知错误"}。建议先重新核对参数后再继续。`
             : signedTx || jitoSignedTx
-              ? `当前已经收到签名结果，下一步应继续把已签名交易送入广播链路，并在对话中持续更新订单与回执状态。`
-              : `当前应用已经成功接住回调，但尚未收到完整签名载荷；后续将继续补齐签名桥接与广播续跑。`,
-        meta: signedTx || jitoSignedTx ? `签名载荷：${signedTx ? "signedTx" : "jitoSignedTx"} 已返回` : undefined,
+              ? `当前已经收到执行确认结果，下一步应继续把交易请求送入广播链路，并在对话中持续更新订单与回执状态。`
+              : `当前应用已经成功接住回调，但尚未收到完整执行载荷；后续将继续补齐兼容回调层与广播续跑。`,
+        meta: signedTx || jitoSignedTx ? `执行载荷：${signedTx ? "signedTx" : "jitoSignedTx"} 已返回` : undefined,
         tone: status === "error" || error ? "warning" : "default",
       });
     }
@@ -1273,15 +1285,15 @@ export default function ChatScreen() {
         {
           id: `assistant-signature-${resumeKey}-resume-start`,
           role: "assistant",
-          title: "已进入广播续跑",
-          content: "我已经拿到你刚刚签好的兑换交易，正在继续执行广播与订单回执查询。",
+          title: "已进入执行续跑",
+          content: "我已经拿到你刚刚确认的兑换交易，正在继续执行广播与订单回执查询。",
           meta: "当前会沿用之前已整理好的兑换参数继续处理",
           tone: "default",
         },
       ]);
 
       try {
-        const executeResult = await executeDexSwap({
+        const executeResult = await executeOnchainSwap({
           ...pending.swap,
           signedTx: signedTx || undefined,
           jitoSignedTx: jitoSignedTx || undefined,
@@ -1293,26 +1305,34 @@ export default function ChatScreen() {
           {
             id: `assistant-signature-${resumeKey}-resume-result`,
             role: "assistant",
-            title: executeResult.status === "success" ? "兑换已进入完成回执" : "兑换已继续执行",
+            title: executeResult.phase === "success"
+              ? "兑换已进入完成回执"
+              : executeResult.phase === "failed"
+                ? "兑换执行失败"
+                : "兑换已继续执行",
             content:
-              executeResult.status === "success"
+              executeResult.phase === "success"
                 ? `我已经继续完成这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，你可以继续查看链上结果与成交细节。`
-                : `我已经继续广播这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，后续会继续等待链上结果更新。`,
+                : executeResult.phase === "failed"
+                  ? "这笔兑换在继续执行时未能成功完成，请重新检查余额、滑点和链路状态后再次尝试。"
+                  : `我已经继续广播这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，后续会继续等待链上结果更新。`,
             meta: executeResult.txHash
               ? `链上回执：${executeResult.txHash}`
               : executeResult.progress?.length
                 ? executeResult.progress.map((item) => `${item.label}：${item.status === "done" ? "完成" : "处理中"}`).join(" · ")
-                : "当前暂未返回链上回执，后续会继续补齐订单轮询。",
-            tone: executeResult.status === "success" ? "success" : "default",
+                : executeResult.phase === "failed"
+                  ? "当前未返回有效链上回执，后续将结合持久化任务与轮询恢复继续补强。"
+                  : "当前暂未返回链上回执，后续会继续补齐订单轮询。",
+            tone: executeResult.phase === "success" ? "success" : executeResult.phase === "failed" ? "danger" : "default",
           },
         ]);
 
         const canPollOrder =
-          executeResult.status !== "success" && Boolean(executeResult.orderId && pending.swap?.chainIndex);
+          executeResult.phase === "executing" && Boolean(executeResult.orderId && pending.swap?.chainIndex);
 
         if (canPollOrder) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
-          const ordersResult = await getDexSwapOrders({
+          const ordersResult = await getOnchainExecutionReceipt({
             address: pending.swap.broadcastAddress || pending.swap.userWalletAddress,
             chainIndex: pending.swap.chainIndex,
             orderId: executeResult.orderId,
@@ -1376,7 +1396,7 @@ export default function ChatScreen() {
       const inferredChainKind: DexChainKind = pending.transfer.toAddress.startsWith("0x") ? "evm" : "solana";
       const transferProgress = [
         { key: "prepare", label: "已整理转账请求", status: "done" as const },
-        { key: "sign", label: "签名结果已返回", status: "done" as const },
+        { key: "confirm", label: "确认结果已返回", status: "done" as const },
         {
           key: "broadcast",
           label: txHash ? "已记录链上回执，等待确认" : "广播能力待接入",
@@ -1390,20 +1410,20 @@ export default function ChatScreen() {
           role: "assistant",
           title: "已进入转账续跑",
           content: txHash
-            ? "我已经收到这笔转账的签名结果与链上回执，正在把结果承接回对话主线程。"
-            : "我已经拿到你刚刚签好的转账交易，正在恢复主线程并更新当前执行阶段。",
+            ? "我已经收到这笔转账的确认结果与链上回执，正在把结果承接回对话主线程。"
+            : "我已经拿到你刚刚确认的转账交易，正在恢复主线程并更新当前执行阶段。",
           meta: txHash
             ? `链上回执：${txHash}`
-            : "当前真实转账广播接口尚未接入，先以主线程状态承接本次签名结果",
+            : "当前真实转账广播接口尚未接入，先以主线程状态承接本次确认结果",
           tone: txHash ? "success" : "default",
         },
         {
           id: `assistant-signature-${resumeKey}-transfer-resume-result`,
           role: "assistant",
-          title: txHash ? "转账签名结果已记录" : "转账已恢复到待广播阶段",
+          title: txHash ? "转账确认结果已记录" : "转账已恢复到待广播阶段",
           content: txHash
             ? `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经回传链上回执，我已先在主线程记录本次结果，后续会继续接上更完整的确认状态更新。`
-            : `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经完成签名回传，我已先将执行进度更新为“已签名、待广播”。由于当前仍缺少统一广播接口，我会把真实广播接入登记为下一步开发项。`,
+            : `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经完成确认回传，我已先将执行进度更新为“已确认、待广播”。由于当前仍缺少统一广播接口，我会把真实广播接入登记为下一步开发项。`,
           meta: `${maskAddress(pending.transfer.fromAddress)} → ${maskAddress(pending.transfer.toAddress)}`,
           tone: txHash ? "success" : "warning",
           card: {
@@ -1411,10 +1431,10 @@ export default function ChatScreen() {
             payload: {
               amount: pending.transfer.amount,
               symbol: pending.transfer.symbol,
-              chainKind: inferredChainKind,
+              chainKind: pending.chainKind,
               fromAddress: pending.transfer.fromAddress,
               toAddress: pending.transfer.toAddress,
-              status: txHash ? "broadcasted" : "prepared",
+              phase: txHash ? "executing" : "awaiting_confirmation",
               progress: transferProgress,
             },
           },
@@ -1820,9 +1840,15 @@ export default function ChatScreen() {
                       </View>
 
                       <Text style={styles.cardHelperTextOnDark}>
-                        {swapCard.requiresSignature
-                          ? "当前已生成待签名交易，请先前往外部钱包完成签名，再回到主线程继续广播与订单回执查询。"
-                          : "提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。"}
+                        {swapCard.phase === "awaiting_confirmation"
+                          ? "当前已生成待确认执行请求，请先前往 Agent Wallet 完成确认，再回到主线程继续广播与订单回执查询。"
+                          : swapCard.phase === "executing"
+                            ? "当前交易已进入执行链路，系统会继续承接链上回执与订单状态。"
+                            : swapCard.phase === "success"
+                              ? "当前交易已经完成回执确认，你可以继续查看成交细节与链上结果。"
+                              : swapCard.phase === "failed"
+                                ? "当前交易执行失败，建议重新检查余额、滑点与链路状态后再次发起。"
+                                : "提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。"}
                       </Text>
 
                       {swapCard.progress?.length ? (
@@ -1844,13 +1870,13 @@ export default function ChatScreen() {
                         <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
                           <Text style={styles.secondaryActionText}>重新获取报价</Text>
                         </Pressable>
-                        {swapCard.requiresSignature && swapCard.signatureRequest ? (
+                        {swapCard.phase === "awaiting_confirmation" && swapCard.signatureRequest ? (
                           <Pressable style={styles.primaryAction} onPress={() => void handleSwapSignature(swapCard)}>
-                            <Text style={styles.primaryActionText}>去签名</Text>
+                            <Text style={styles.primaryActionText}>确认交易</Text>
                           </Pressable>
                         ) : (
                           <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                            <Text style={styles.primaryActionText}>先确认钱包余额</Text>
+                            <Text style={styles.primaryActionText}>{swapCard.phase === "success" ? "查看钱包结果" : "先确认钱包余额"}</Text>
                           </Pressable>
                         )}
                       </View>
@@ -1897,13 +1923,13 @@ export default function ChatScreen() {
 
                       <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "rgba(15,23,42,0.32)", padding: 12, gap: 6 }}>
                         <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>当前状态：待签名确认</Text>
+                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>当前状态：{transferCard.phase === "awaiting_confirmation" ? "待执行确认" : transferCard.phase === "executing" ? "执行中" : transferCard.phase === "success" ? "已完成" : transferCard.phase === "failed" ? "执行失败" : "预览中"}</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>发送数量：{transferCard.amount} {transferCard.symbol}</Text>
                         <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>目标地址：{maskAddress(transferCard.toAddress)}</Text>
                       </View>
 
                       <Text style={styles.cardHelperTextOnDark}>
-                        提交前先确认目标地址、链路类型与资产余额，后续会继续补签名回传与广播回执。
+                        提交前先确认目标地址、链路类型与资产余额，后续会继续补执行确认回传与广播回执。
                       </Text>
 
                       <View style={styles.swapProgressPanel}>
@@ -1924,7 +1950,7 @@ export default function ChatScreen() {
                           <Text style={styles.secondaryActionText}>继续确认条件</Text>
                         </Pressable>
                         <Pressable style={styles.primaryAction} onPress={() => void handleTransferSignature(transferCard)}>
-                          <Text style={styles.primaryActionText}>发起签名</Text>
+                           <Text style={styles.primaryActionText}>确认转账</Text>
                         </Pressable>
                       </View>
                     </LinearGradient>
