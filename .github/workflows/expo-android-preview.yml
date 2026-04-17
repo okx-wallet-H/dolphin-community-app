@@ -14,6 +14,135 @@ jobs:
   build-android-preview:
     name: Build Android preview APK via EAS
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm check
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Trigger and wait for EAS Android preview build
+        id: eas_build
+        shell: bash
+        run: |
+          set -euo pipefail
+          eas build --platform android --profile preview --non-interactive --wait --json > eas-build.json
+          node <<'NODE'
+          const fs = require('fs');
+
+          const raw = fs.readFileSync('eas-build.json', 'utf8').trim();
+          const start = Math.min(
+            ...['[', '{']
+              .map((token) => raw.indexOf(token))
+              .filter((index) => index >= 0)
+          );
+
+          if (!Number.isFinite(start)) {
+            throw new Error('EAS JSON output not found in eas-build.json');
+          }
+
+          const parsed = JSON.parse(raw.slice(start));
+          const build = Array.isArray(parsed) ? parsed[0] : parsed;
+
+          const buildId = build?.id ?? '';
+          const buildPageUrl =
+            build?.buildDetailsPageUrl ??
+            build?.logs?.buildLogsUrl ??
+            build?.permalink ??
+            '';
+          const artifactUrl =
+            build?.artifacts?.buildUrl ??
+            build?.artifacts?.applicationArchiveUrl ??
+            build?.artifacts?.url ??
+            '';
+
+          if (!buildId) {
+            throw new Error('EAS build id is missing from JSON output');
+          }
+
+          const outputPath = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(outputPath, `build_id=${buildId}\n`);
+          fs.appendFileSync(outputPath, `build_page_url=${buildPageUrl}\n`);
+          fs.appendFileSync(outputPath, `artifact_url=${artifactUrl}\n`);
+
+          const summary = [
+            '## Expo Android preview build',
+            '',
+            `- Build ID: ${buildId}`,
+            `- Build page: ${buildPageUrl || 'N/A'}`,
+            `- APK artifact URL: ${artifactUrl || 'N/A'}`,
+            ''
+          ].join('\n');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+          NODE
+
+      - name: Download APK artifact from EAS
+        if: ${{ steps.eas_build.outputs.artifact_url != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build-artifacts
+          curl --fail --location --silent --show-error \
+            "${{ steps.eas_build.outputs.artifact_url }}" \
+            --output build-artifacts/dolphin-community-preview.apk
+
+      - name: Upload EAS build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: expo-eas-build-metadata
+          path: eas-build.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Android preview APK
+        if: ${{ steps.eas_build.outputs.artifact_url != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolphin-community-preview-apk
+          path: build-artifacts/dolphin-community-preview.apk
+          if-no-files-found: error
+          retention-days: 14
+name: Expo Android Preview Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: expo-android-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android-preview:
+    name: Build Android preview APK via EAS
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
