@@ -9,7 +9,7 @@
 - **项目名**：H Wallet App（React Native + Expo）
 - **GitHub**：okx-wallet-H/dolphin-community-app
 - **代码路径**：/home/ubuntu/dolphin-community-app-full-20260417（你的沙盒）
-- **Expo 项目 ID**：076111c0-68cf-4155-9427-9526b03dd9b7
+- **Expo 项目 ID**：不再硬编码在仓库中；如需绑定当前项目，请通过 `EXPO_PROJECT_ID` 环境变量注入
 - **Expo slug**：h3
 
 ---
@@ -113,7 +113,7 @@ eas update --branch main --message "你的描述"
 | Chat AI 执行链路 | d3db260 | app/(tabs)/chat.tsx |
 | Agent Wallet 登录/验证/余额 | e3b5763 | server/routes/wallet.ts |
 | EAS Build 配置 | ab2fed7 | eas.json |
-| Expo slug 改为 h-wallet | 8e83836 | app.json |
+| Expo slug 改为 h3 | 323b7d3 | app.config.ts |
 | Chat 页加 v2.1 版本标识 | 68ab1cf | app/(tabs)/chat.tsx |
 
 ---

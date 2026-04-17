@@ -39,6 +39,8 @@ const env = {
   androidPackage: bundleId,
 };
 
+const expoProjectId = process.env.EXPO_PROJECT_ID?.trim() || undefined;
+
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
@@ -127,9 +129,13 @@ const config: ExpoConfig = {
     reactCompiler: true,
   },
   extra: {
-    eas: {
-      projectId: "076111c0-68cf-4155-9427-9526b03dd9b7",
-    },
+    ...(expoProjectId
+      ? {
+          eas: {
+            projectId: expoProjectId,
+          },
+        }
+      : {}),
   },
 };
 
