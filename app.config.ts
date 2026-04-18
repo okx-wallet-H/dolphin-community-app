@@ -40,11 +40,12 @@ const env = {
 };
 
 const expoProjectId =
-  process.env.EXPO_PROJECT_ID?.trim() || "174d6be5-8a0e-429a-8b8b-7b2ce9a8906d";
+  process.env.EXPO_PROJECT_ID?.trim() || "5d37b918-426b-4a8c-84a3-9bb5e5762f40";
 
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
+  owner: "vip_888",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
