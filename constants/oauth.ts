@@ -7,13 +7,15 @@ const bundleId = "space.manus.dolphin.community.app.t20260417000100";
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
 
+const VERIFIED_AGENT_WALLET_API_BASE_URL = "https://new-h-wallet-api.vercel.app";
+
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
   server: process.env.EXPO_PUBLIC_OAUTH_SERVER_URL ?? "",
   appId: process.env.EXPO_PUBLIC_APP_ID ?? "",
   ownerId: process.env.EXPO_PUBLIC_OWNER_OPEN_ID ?? "",
   ownerName: process.env.EXPO_PUBLIC_OWNER_NAME ?? "",
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? '',
+  apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL?.trim() ?? "",
   deepLinkScheme: schemeFromBundleId,
 };
 
@@ -45,8 +47,9 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  // Fallback to empty (will use relative URL)
-  return "";
+  // On native or when no runtime mapping is available, fall back to the
+  // currently verified Agent Wallet backend so资产、登录与链上能力始终指向同一可信链路。
+  return VERIFIED_AGENT_WALLET_API_BASE_URL;
 }
 
 export const SESSION_TOKEN_KEY = "app_session_token";

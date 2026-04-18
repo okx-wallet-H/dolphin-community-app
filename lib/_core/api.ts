@@ -80,7 +80,7 @@ export async function getMe(): Promise<AgentUserResponse> {
 }
 
 export async function sendAgentWalletOtp(email: string): Promise<AgentWalletSendOtpResponse> {
-  const payload = (await apiCall('/api/agent-wallet/send-otp', {
+  const payload = (await apiCall('/api/agent-wallet/send-code', {
     method: 'POST',
     body: JSON.stringify({ email }),
   })) as Record<string, unknown>;
@@ -104,10 +104,14 @@ export async function sendAgentWalletOtp(email: string): Promise<AgentWalletSend
   };
 }
 
-export async function verifyAgentWalletOtp(email: string, code: string): Promise<AgentWalletVerifyResponse> {
+export async function verifyAgentWalletOtp(
+  email: string,
+  code: string,
+  requestId?: string,
+): Promise<AgentWalletVerifyResponse> {
   const payload = (await apiCall('/api/agent-wallet/verify', {
     method: 'POST',
-    body: JSON.stringify({ email, code }),
+    body: JSON.stringify({ email, code, requestId }),
   })) as Record<string, unknown>;
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -1122,7 +1126,7 @@ function getOkxMcpChainName(chainIndex: string) {
     case '1':
       return 'Ethereum';
     case '56':
-      return 'BSC';
+      return 'BNB Chain';
     case '137':
       return 'Polygon';
     case '42161':

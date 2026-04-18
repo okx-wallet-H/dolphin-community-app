@@ -39,7 +39,6 @@ const TEXT_PLACEHOLDER = "#A29BBE";
 const ERROR = "#D83A52";
 const GLOW_PURPLE = "rgba(139,103,255,0.24)";
 
-type AuthMode = "login" | "register";
 type StatusTone = "default" | "success" | "error";
 
 const FEATURE_CARDS = [
@@ -115,20 +114,8 @@ function normalizeErrorMessage(message: string, fallback: string): string {
   return normalized || fallback;
 }
 
-function buildDefaultStatus(mode: AuthMode) {
-  if (mode === "register") {
-    return "首次验证成功后会自动创建 H Wallet 账户并初始化钱包。";
-  }
-
-  return "请输入邮箱并完成验证码验证，即可继续进入 H Wallet。";
-}
-
-function buildPasswordHint(mode: AuthMode) {
-  if (mode === "register") {
-    return "当前注册主链路采用邮箱验证码完成身份校验，密码能力仍在接入中。";
-  }
-
-  return "当前版本以邮箱验证码登录为主，密码输入框用于保留与设计稿一致的交互结构。";
+function buildDefaultStatus() {
+  return "请输入邮箱并完成验证码验证，仅保留当前已验证通过的 OKX Agent Wallet 链路。";
 }
 
 function LoginLogo() {
@@ -146,22 +133,16 @@ function LoginLogo() {
 
 export default function LoginRoute() {
   const scrollRef = useRef<ScrollView | null>(null);
-  const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
   const [statusTone, setStatusTone] = useState<StatusTone>("default");
-  const [statusText, setStatusText] = useState(buildDefaultStatus("login"));
+  const [statusText, setStatusText] = useState(buildDefaultStatus());
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+  const [otpRequestId, setOtpRequestId] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [isRestoringSession, setIsRestoringSession] = useState(true);
-
-  useEffect(() => {
-    setStatusTone("default");
-    setStatusText(buildDefaultStatus(mode));
-  }, [mode]);
 
   useEffect(() => {
     let mounted = true;
@@ -233,6 +214,7 @@ export default function LoginRoute() {
       setStatusText("验证码发送中，请稍候...");
       const result = await sendAgentWalletOtp(email.trim());
       setOtpSent(true);
+      setOtpRequestId(result.requestId || '');
       setMaskedEmail(result.maskedEmail);
       setStatusTone("success");
       setStatusText(
@@ -268,9 +250,9 @@ export default function LoginRoute() {
     try {
       setIsSubmitting(true);
       setStatusTone("default");
-      setStatusText(mode === "register" ? "正在连接 OKX Agent Wallet 并创建钱包..." : "正在验证验证码并恢复 OKX Agent Wallet...");
+      setStatusText("正在验证邮箱并连接当前已验证通过的 OKX Agent Wallet...");
 
-      const result = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ""));
+      const result = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ""), otpRequestId);
       if (!result.app_session_id) {
         throw new Error("UNAUTHORIZED");
       }
@@ -298,7 +280,7 @@ export default function LoginRoute() {
       );
 
       setStatusTone("success");
-      setStatusText(mode === "register" ? "OKX Agent Wallet 已创建，正在进入钱包首页。" : "OKX Agent Wallet 已恢复，正在进入钱包首页。");
+      setStatusText("OKX Agent Wallet 验证成功，正在进入钱包首页。");
       router.replace("/(tabs)/wallet");
     } catch (error) {
       setStatusTone("error");
@@ -349,36 +331,6 @@ export default function LoginRoute() {
             </View>
 
             <View style={styles.formCard}>
-              <View style={styles.segmentWrap}>
-                <View style={styles.segmentBg}>
-                  {(["login", "register"] as const).map((item) => {
-                    const active = item === mode;
-                    return (
-                      <Pressable
-                        key={item}
-                        style={styles.segmentPressable}
-                        onPress={() => setMode(item)}
-                      >
-                        {active ? (
-                          <LinearGradient
-                            colors={BRAND_GRADIENT}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.segmentActivePill}
-                          >
-                            <Text style={styles.segmentActiveText}>{item === "login" ? "登录" : "注册"}</Text>
-                          </LinearGradient>
-                        ) : (
-                          <View style={styles.segmentInactivePill}>
-                            <Text style={styles.segmentInactiveText}>{item === "login" ? "登录" : "注册"}</Text>
-                          </View>
-                        )}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
               <View style={styles.fieldStack}>
                 <View style={styles.inputShell}>
                   <TextInput
@@ -433,21 +385,6 @@ export default function LoginRoute() {
                   </Pressable>
                 </View>
 
-                <View style={styles.inputShell}>
-                  <TextInput
-                    style={styles.input}
-                    value={password}
-                    onChangeText={setPassword}
-                    onFocus={handleFocus}
-                    placeholder="请输入密码"
-                    placeholderTextColor={TEXT_PLACEHOLDER}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="off"
-                    importantForAutofill="no"
-                  />
-                </View>
               </View>
 
               <Pressable
@@ -474,7 +411,7 @@ export default function LoginRoute() {
               </Pressable>
 
               <Text style={[styles.statusText, { color: helperTextColor }]}>{statusText}</Text>
-              <Text style={styles.passwordHint}>{buildPasswordHint(mode)}</Text>
+              <Text style={styles.passwordHint}>当前页面只保留已验证通过的邮箱验证码链路，旧的邮箱注册接入已停用。</Text>
               {otpSent ? (
                 <Text style={styles.otpHint}>验证码已发送至 {maskedEmail || email.trim()}，请查收后输入。</Text>
               ) : null}

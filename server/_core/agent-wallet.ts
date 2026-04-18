@@ -1,22 +1,19 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
-const MOCK_LOGIN_METHOD = "agent_wallet_email";
-const OKX_BASE_URL = "https://www.okx.com";
-const SEND_EMAIL_CODE_PATH = "/api/v5/waas/account/send-email-verify-code";
-const LOGIN_PATH = "/api/v5/waas/account/login";
-const ACCOUNT_WALLETS_PATH = "/api/v5/waas/wallet/account-wallets";
+const LOGIN_METHOD = "agent_wallet_email";
+const OKX_BASE_URL = "https://web3.okx.com";
+const AUTH_INIT_PATH = "/priapi/v5/wallet/agentic/auth/init";
+const AUTH_VERIFY_PATH = "/priapi/v5/wallet/agentic/auth/verify";
+const ACCOUNT_CREATE_PATH = "/priapi/v5/wallet/agentic/account/create";
+const ACCOUNT_LIST_PATH = "/priapi/v5/wallet/agentic/account/list";
+const ACCOUNT_ADDRESS_LIST_PATH = "/priapi/v5/wallet/agentic/account/address/list";
+const OKX_CLIENT_VERSION = process.env.OKX_CLIENT_VERSION?.trim() || "1.0.0";
 
 type PendingOtp = {
-  code: string;
+  flowId: string;
+  tempPubKey: string;
   expiresAt: number;
-  requestId: string;
-};
-
-type WalletRecord = {
-  evmAddress: string;
-  solanaAddress: string;
-  createdAt: number;
 };
 
 type SendOtpResponse = {
@@ -26,12 +23,12 @@ type SendOtpResponse = {
   expiresIn: number;
   mockMode: boolean;
   message: string;
-  debugCode?: string;
 };
 
 type VerifyOtpInput = {
   email: string;
   code: string;
+  requestId?: string;
 };
 
 type VerifyOtpResponse = {
@@ -53,8 +50,14 @@ type VerifyOtpResponse = {
 
 type AnyRecord = Record<string, any>;
 
+type RequestState = {
+  email: string;
+  flowId: string;
+  tempPubKey: string;
+  issuedAt: number;
+};
+
 const pendingOtpStore = new Map<string, PendingOtp>();
-const walletStore = new Map<string, WalletRecord>();
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -79,25 +82,6 @@ function maskEmail(email: string) {
   return `${localPart.slice(0, 2)}***${localPart.slice(-1)}@${domain}`;
 }
 
-function buildRequestId(prefix: string) {
-  return `${prefix}_${crypto.randomBytes(8).toString("hex")}`;
-}
-
-function getMockOtpCode() {
-  return normalizeOtpCode(process.env.OKX_AGENT_WALLET_MOCK_OTP || "123456");
-}
-
-function buildDeterministicWallet(email: string): WalletRecord {
-  const evmSeed = crypto.createHash("sha256").update(`evm:${email}`).digest("hex");
-  const solSeed = crypto.createHash("sha256").update(`sol:${email}`).digest("hex");
-
-  return {
-    evmAddress: `0x${evmSeed.slice(0, 40)}`,
-    solanaAddress: `So${solSeed.slice(0, 42)}`,
-    createdAt: Date.now(),
-  };
-}
-
 function buildSessionUser(email: string, remoteId?: string) {
   const normalizedEmail = normalizeEmail(email);
   const openIdSeed = remoteId?.trim()
@@ -108,7 +92,7 @@ function buildSessionUser(email: string, remoteId?: string) {
     openId: `okx-agent-wallet:${openIdSeed.slice(0, 32)}`,
     name: normalizedEmail.split("@")[0] || "H Wallet User",
     email: normalizedEmail,
-    loginMethod: MOCK_LOGIN_METHOD,
+    loginMethod: LOGIN_METHOD,
   };
 }
 
@@ -127,28 +111,16 @@ function getOkxBaseUrl() {
   return getEnv(["OKX_AGENT_WALLET_BASE_URL", "OKX_BASE_URL"]).replace(/\/$/, "") || OKX_BASE_URL;
 }
 
-function getOkxApiKey() {
-  return getEnv(["OKX_AGENT_WALLET_API_KEY", "OKX_API_KEY"]);
-}
-
-function getOkxSecretKey() {
-  return getEnv(["OKX_AGENT_WALLET_SECRET_KEY", "OKX_SECRET_KEY"]);
-}
-
-function getOkxPassphrase() {
-  return getEnv(["OKX_AGENT_WALLET_PASSPHRASE", "OKX_PASSPHRASE"]);
+function getOkxProjectId() {
+  return getEnv(["OKX_AGENT_WALLET_PROJECT_ID", "OKX_PROJECT_ID", "OKX_ACCESS_PROJECT"]);
 }
 
 function isRealOkxConfigured() {
-  return Boolean(getOkxApiKey() && getOkxSecretKey() && getOkxPassphrase());
+  return Boolean(getOkxProjectId());
 }
 
 function assertRealOkxConfigured() {
-  const missing = [
-    ["OKX_AGENT_WALLET_API_KEY / OKX_API_KEY", getOkxApiKey()],
-    ["OKX_AGENT_WALLET_SECRET_KEY / OKX_SECRET_KEY", getOkxSecretKey()],
-    ["OKX_AGENT_WALLET_PASSPHRASE / OKX_PASSPHRASE", getOkxPassphrase()],
-  ]
+  const missing = [["OKX_AGENT_WALLET_PROJECT_ID / OKX_PROJECT_ID / OKX_ACCESS_PROJECT", getOkxProjectId()]]
     .filter(([, value]) => !value)
     .map(([label]) => label);
 
@@ -157,49 +129,59 @@ function assertRealOkxConfigured() {
   }
 }
 
-function buildSignedHeaders(method: string, requestPath: string, body: string) {
-  const timestamp = new Date().toISOString();
-  const secretKey = getOkxSecretKey();
-  const signaturePayload = `${timestamp}${method.toUpperCase()}${requestPath}${body}`;
-  const signature = crypto.createHmac("sha256", secretKey).update(signaturePayload).digest("base64");
-
+function buildAnonymousHeaders() {
   return {
     "Content-Type": "application/json",
-    "OK-ACCESS-KEY": getOkxApiKey(),
-    "OK-ACCESS-PASSPHRASE": getOkxPassphrase(),
-    "OK-ACCESS-SIGN": signature,
-    "OK-ACCESS-TIMESTAMP": timestamp,
-  };
+    "ok-client-version": OKX_CLIENT_VERSION,
+    "Ok-Access-Client-type": "agent-cli",
+  } as Record<string, string>;
 }
 
-async function callOkxApi(method: "GET" | "POST", requestPath: string, payload?: Record<string, unknown>) {
-  const baseUrl = getOkxBaseUrl();
-  const body = method === "POST" ? JSON.stringify(payload ?? {}) : "";
-  const url = `${baseUrl}${requestPath}`;
-  const headers = buildSignedHeaders(method, requestPath, body);
+function buildJwtHeaders(accessToken: string) {
+  return {
+    ...buildAnonymousHeaders(),
+    Authorization: `Bearer ${accessToken}`,
+  } as Record<string, string>;
+}
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: method === "POST" ? body : undefined,
-  });
-
+async function parseOkxResponse(response: Response) {
   const text = await response.text();
-  let data: AnyRecord = {};
+  let body: AnyRecord = {};
   try {
-    data = text ? JSON.parse(text) : {};
+    body = text ? JSON.parse(text) : {};
   } catch {
-    data = { raw: text };
+    body = { raw: text };
   }
 
-  const code = typeof data.code === "string" ? data.code : "0";
+  const codeValue = body?.code;
+  const code = typeof codeValue === "number" ? String(codeValue) : typeof codeValue === "string" ? codeValue : "";
   if (!response.ok || (code && code !== "0")) {
     throw new Error(
-      data.msg || data.message || data.error_message || data.error || `OKX request failed: ${response.status}`,
+      body?.msg || body?.message || body?.error_message || body?.error || `OKX request failed: ${response.status}`,
     );
   }
 
-  return data;
+  return body?.data;
+}
+
+async function callOkxPublicPost(requestPath: string, payload: Record<string, unknown>) {
+  const url = `${getOkxBaseUrl()}${requestPath}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildAnonymousHeaders(),
+    body: JSON.stringify(payload ?? {}),
+  });
+  return parseOkxResponse(response);
+}
+
+async function callOkxJwtPost(requestPath: string, accessToken: string, payload: Record<string, unknown>) {
+  const url = `${getOkxBaseUrl()}${requestPath}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: buildJwtHeaders(accessToken),
+    body: JSON.stringify(payload ?? {}),
+  });
+  return parseOkxResponse(response);
 }
 
 function extractFirstString(data: AnyRecord, candidates: string[]) {
@@ -221,50 +203,34 @@ function extractFirstBoolean(data: AnyRecord, candidates: string[]) {
     if (typeof value === "boolean") {
       return value;
     }
+    if (typeof value === "number") {
+      return value !== 0;
+    }
     if (typeof value === "string") {
       const normalized = value.trim().toLowerCase();
-      if (normalized === "true") return true;
-      if (normalized === "false") return false;
+      if (normalized === "true" || normalized === "1") return true;
+      if (normalized === "false" || normalized === "0") return false;
     }
   }
   return false;
 }
 
-function extractCandidateArrays(data: AnyRecord) {
-  const candidates = [
-    data?.data,
-    data?.data?.[0],
-    data?.data?.wallets,
-    data?.data?.accountWallets,
-    data?.wallets,
-    data?.accountWallets,
-  ];
-
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate;
-    }
+function getFirstDataItem(data: unknown) {
+  if (Array.isArray(data)) {
+    return (data[0] ?? {}) as AnyRecord;
   }
-
-  for (const candidate of candidates) {
-    if (candidate && typeof candidate === "object") {
-      const nestedArrays = Object.values(candidate).filter(Array.isArray);
-      if (nestedArrays.length > 0) {
-        return nestedArrays[0] as AnyRecord[];
-      }
-    }
+  if (data && typeof data === "object") {
+    return data as AnyRecord;
   }
-
-  return [] as AnyRecord[];
+  return {} as AnyRecord;
 }
 
 function classifyWalletAddress(item: AnyRecord) {
   const address = extractFirstString(item, [
-    "walletAddress",
     "address",
+    "walletAddress",
     "accountAddress",
     "addr",
-    "wallet.address",
   ]);
 
   if (!address) {
@@ -272,16 +238,18 @@ function classifyWalletAddress(item: AnyRecord) {
   }
 
   const chainText = [
-    item.chainType,
     item.chainName,
+    item.chainPath,
+    item.addressType,
+    item.walletType,
     item.network,
     item.symbol,
-    item.walletType,
-    item.chain,
-    item.coinType,
     item.protocol,
+    item.chainType,
+    item.chain,
+    item.chainIndex,
   ]
-    .filter((value) => typeof value === "string")
+    .filter((value) => typeof value === "string" || typeof value === "number")
     .join(" ")
     .toLowerCase();
 
@@ -296,86 +264,183 @@ function classifyWalletAddress(item: AnyRecord) {
   return { chainKind: "", address };
 }
 
-async function sendOtpByOkx(email: string): Promise<SendOtpResponse> {
-  const data = await callOkxApi("POST", SEND_EMAIL_CODE_PATH, {
-    email,
-    codeType: 1,
-  });
+function collectAddresses(items: AnyRecord[]) {
+  let evmAddress = "";
+  let solanaAddress = "";
 
-  const requestId =
-    extractFirstString(data, ["msgId", "data.msgId", "requestId", "data.requestId", "traceId"]) ||
-    buildRequestId("okxreq");
-
-  return {
-    success: true,
-    requestId,
-    maskedEmail: maskEmail(email),
-    expiresIn: 600,
-    mockMode: false,
-    message: extractFirstString(data, ["msg", "message", "data.message"]) || "验证码已发送，请查收邮箱",
-  };
-}
-
-async function fetchWalletsByAccountId(accountId: string) {
-  const query = new URLSearchParams({ accountId });
-  return callOkxApi("GET", `${ACCOUNT_WALLETS_PATH}?${query.toString()}`);
-}
-
-async function verifyOtpByOkx({ email, code }: VerifyOtpInput): Promise<VerifyOtpResponse> {
-  const loginData = await callOkxApi("POST", LOGIN_PATH, {
-    email,
-    emailVerifyCode: code,
-  });
-
-  const accountId = extractFirstString(loginData, [
-    "accountId",
-    "data.accountId",
-    "data.0.accountId",
-    "data.accountInfo.accountId",
-    "data.userInfo.accountId",
-    "userInfo.accountId",
-    "uid",
-    "data.uid",
-  ]);
-
-  const remoteId =
-    accountId ||
-    extractFirstString(loginData, ["openId", "data.openId", "userId", "data.userId", "sub", "data.sub"]);
-
-  let evmAddress = extractFirstString(loginData, [
-    "evmAddress",
-    "data.evmAddress",
-    "wallet.evmAddress",
-    "data.wallet.evmAddress",
-    "addresses.evm",
-    "data.addresses.evm",
-  ]);
-  let solanaAddress = extractFirstString(loginData, [
-    "solanaAddress",
-    "data.solanaAddress",
-    "wallet.solanaAddress",
-    "data.wallet.solanaAddress",
-    "addresses.solana",
-    "data.addresses.solana",
-  ]);
-
-  if (accountId) {
-    const walletData = await fetchWalletsByAccountId(accountId);
-    const items = extractCandidateArrays(walletData);
-    for (const item of items) {
-      const classified = classifyWalletAddress(item);
-      if (classified.chainKind === "evm" && !evmAddress) {
-        evmAddress = classified.address;
-      }
-      if (classified.chainKind === "solana" && !solanaAddress) {
-        solanaAddress = classified.address;
-      }
+  for (const item of items) {
+    const classified = classifyWalletAddress(item);
+    if (classified.chainKind === "evm" && !evmAddress) {
+      evmAddress = classified.address;
+    }
+    if (classified.chainKind === "solana" && !solanaAddress) {
+      solanaAddress = classified.address;
     }
   }
 
-  if (!evmAddress || !solanaAddress) {
-    throw new Error("OKX Agent Wallet 登录成功，但未返回完整钱包地址");
+  return { evmAddress, solanaAddress };
+}
+
+function buildEncodedRequestId(state: RequestState) {
+  return Buffer.from(JSON.stringify(state)).toString("base64url");
+}
+
+function parseRequestState(requestId: string, email: string) {
+  try {
+    const parsed = JSON.parse(Buffer.from(requestId, "base64url").toString("utf8")) as Partial<RequestState>;
+    if (
+      parsed &&
+      normalizeEmail(parsed.email || "") === normalizeEmail(email) &&
+      typeof parsed.flowId === "string" &&
+      parsed.flowId.trim() &&
+      typeof parsed.tempPubKey === "string" &&
+      parsed.tempPubKey.trim()
+    ) {
+      return {
+        email: normalizeEmail(typeof parsed.email === "string" ? parsed.email : email),
+        flowId: parsed.flowId.trim(),
+        tempPubKey: parsed.tempPubKey.trim(),
+        issuedAt: Number(parsed.issuedAt || Date.now()),
+      } as RequestState;
+    }
+  } catch {
+    return null;
   }
+  return null;
+}
+
+function generateTempPubKey() {
+  const { publicKey } = crypto.generateKeyPairSync("x25519");
+  const publicDer = publicKey.export({ format: "der", type: "spki" });
+  const rawPublicKey = Buffer.from(publicDer).subarray(-32);
+  return rawPublicKey.toString("base64");
+}
+
+async function ensureAccountAddresses(accessToken: string, projectId: string, accountIdHint?: string) {
+  const accountListData = await callOkxJwtPost(ACCOUNT_LIST_PATH, accessToken, {
+    projectId,
+  });
+
+  let accountList = Array.isArray(accountListData) ? (accountListData as AnyRecord[]) : [];
+  if (accountIdHint) {
+    const matched = accountList.filter((item) => extractFirstString(item, ["accountId"]) === accountIdHint);
+    if (matched.length > 0) {
+      accountList = matched;
+    }
+  }
+
+  if (accountList.length === 0) {
+    const createData = await callOkxJwtPost(ACCOUNT_CREATE_PATH, accessToken, {
+      projectId,
+    });
+    const created = getFirstDataItem(createData);
+    const directAddresses = Array.isArray(created.addressList) ? created.addressList : [];
+    if (directAddresses.length > 0) {
+      return directAddresses as AnyRecord[];
+    }
+    const createdAccountId = extractFirstString(created, ["accountId"]);
+    if (createdAccountId) {
+      accountList = [{ accountId: createdAccountId }];
+    }
+  }
+
+  const accountIds = accountList
+    .map((item) => extractFirstString(item, ["accountId"]))
+    .filter(Boolean);
+
+  if (accountIds.length === 0) {
+    return [] as AnyRecord[];
+  }
+
+  const addressData = await callOkxJwtPost(ACCOUNT_ADDRESS_LIST_PATH, accessToken, {
+    accountIds,
+  });
+
+  const root = getFirstDataItem(addressData);
+  const accounts = Array.isArray(root.accounts) ? root.accounts : [];
+  return accounts.flatMap((account) => (Array.isArray(account.addresses) ? account.addresses : []));
+}
+
+async function sendOtpByOkx(email: string): Promise<SendOtpResponse> {
+  const tempPubKey = generateTempPubKey();
+  const data = await callOkxPublicPost(AUTH_INIT_PATH, {
+    email,
+    locale: "en-US",
+  });
+
+  const item = getFirstDataItem(data);
+  const flowId = extractFirstString(item, ["flowId", "flow_id"]);
+  if (!flowId) {
+    throw new Error("OKX Agent Wallet 未返回 flowId，无法继续验证码校验");
+  }
+
+  const requestState: RequestState = {
+    email,
+    flowId,
+    tempPubKey,
+    issuedAt: Date.now(),
+  };
+
+  pendingOtpStore.set(email, {
+    flowId,
+    tempPubKey,
+    expiresAt: Date.now() + OTP_TTL_MS,
+  });
+
+  return {
+    success: true,
+    requestId: buildEncodedRequestId(requestState),
+    maskedEmail: maskEmail(email),
+    expiresIn: 600,
+    mockMode: false,
+    message: "验证码已发送，请查收邮箱",
+  };
+}
+
+async function verifyOtpByOkx({ email, code, requestId }: VerifyOtpInput): Promise<VerifyOtpResponse> {
+  const requestState =
+    (requestId ? parseRequestState(requestId, email) : null) ||
+    (() => {
+      const cached = pendingOtpStore.get(email);
+      if (cached && cached.expiresAt > Date.now()) {
+        return {
+          email,
+          flowId: cached.flowId,
+          tempPubKey: cached.tempPubKey,
+          issuedAt: Date.now(),
+        } as RequestState;
+      }
+      return null;
+    })();
+
+  if (!requestState?.flowId || !requestState?.tempPubKey) {
+    throw new Error("验证码会话已失效，请重新获取验证码");
+  }
+
+  const verifyData = await callOkxPublicPost(AUTH_VERIFY_PATH, {
+    email,
+    flowId: requestState.flowId,
+    otp: code,
+    tempPubKey: requestState.tempPubKey,
+  });
+
+  const verifyItem = getFirstDataItem(verifyData);
+  const accessToken = extractFirstString(verifyItem, ["accessToken", "access_token"]);
+  const accountId = extractFirstString(verifyItem, ["accountId", "account_id"]);
+  const remoteId = accountId || extractFirstString(verifyItem, ["projectId", "project_id", "accountName"]);
+  const projectId = extractFirstString(verifyItem, ["projectId", "project_id"]) || getOkxProjectId();
+
+  let addressItems = Array.isArray(verifyItem.addressList) ? (verifyItem.addressList as AnyRecord[]) : [];
+  if ((!addressItems || addressItems.length === 0) && accessToken && projectId) {
+    addressItems = await ensureAccountAddresses(accessToken, projectId, accountId);
+  }
+
+  const { evmAddress, solanaAddress } = collectAddresses(addressItems);
+  if (!evmAddress || !solanaAddress) {
+    throw new Error("OKX Agent Wallet 登录成功，但未返回完整的钱包地址");
+  }
+
+  pendingOtpStore.delete(email);
 
   return {
     success: true,
@@ -384,7 +449,7 @@ async function verifyOtpByOkx({ email, code }: VerifyOtpInput): Promise<VerifyOt
       evmAddress,
       solanaAddress,
     },
-    isNewWallet: extractFirstBoolean(loginData, ["isNewWallet", "data.isNewWallet", "isCreated", "data.isCreated"]),
+    isNewWallet: extractFirstBoolean(verifyItem, ["isNew", "is_new"]),
     sessionUser: buildSessionUser(email, remoteId || email),
     mockMode: false,
   };
@@ -417,5 +482,5 @@ export async function verifyWalletOtp(input: VerifyOtpInput): Promise<VerifyOtpR
   }
 
   assertRealOkxConfigured();
-  return verifyOtpByOkx({ email, code });
+  return verifyOtpByOkx({ email, code, requestId: input.requestId });
 }

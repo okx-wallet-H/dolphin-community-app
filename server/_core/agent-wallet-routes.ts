@@ -85,7 +85,7 @@ export function registerAgentWalletRoutes(app: Express) {
     res.status(405).json({
       error: "Method not allowed",
       allowedMethods: ["POST"],
-      route: "/api/auth/send-code",
+      route: "/api/agent-wallet/send-code",
     });
   };
 
@@ -115,19 +115,15 @@ export function registerAgentWalletRoutes(app: Express) {
     }
   };
 
-  app.get("/api/agent-wallet/send-otp", handleSendOtpInfo);
   app.get("/api/agent-wallet/send-code", handleSendOtpInfo);
-  app.get("/api/auth/send-code", handleSendOtpInfo);
 
-  app.post("/api/agent-wallet/send-otp", handleSendOtp);
   app.post("/api/agent-wallet/send-code", handleSendOtp);
-  app.post("/api/auth/send-code", handleSendOtp);
 
   const handleVerifyInfo = (_req: Request, res: Response) => {
     res.status(405).json({
       error: "Method not allowed",
       allowedMethods: ["POST"],
-      route: "/api/auth/verify",
+      route: "/api/agent-wallet/verify",
     });
   };
 
@@ -167,9 +163,7 @@ export function registerAgentWalletRoutes(app: Express) {
   };
 
   app.get("/api/agent-wallet/verify", handleVerifyInfo);
-  app.get("/api/auth/verify", handleVerifyInfo);
   app.post("/api/agent-wallet/verify", handleVerify);
-  app.post("/api/auth/verify", handleVerify);
 
   app.get("/api/agent-wallet/me", async (req: Request, res: Response) => {
     try {
@@ -181,16 +175,6 @@ export function registerAgentWalletRoutes(app: Express) {
     }
   });
 
-  app.get("/api/auth/me", async (req: Request, res: Response) => {
-    try {
-      const user = await sdk.authenticateRequest(req);
-      res.json({ user: buildUserResponse(user) });
-    } catch (error) {
-      console.error("[Agent Wallet] auth alias get current user failed", error);
-      res.status(401).json({ error: "Not authenticated", user: null });
-    }
-  });
-
   const handleLogout = (req: Request, res: Response) => {
     const cookieOptions = getSessionCookieOptions(req);
     res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -198,5 +182,4 @@ export function registerAgentWalletRoutes(app: Express) {
   };
 
   app.post("/api/agent-wallet/logout", handleLogout);
-  app.post("/api/auth/logout", handleLogout);
 }

@@ -67,9 +67,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = parseBody(req);
   const email = normalizeEmail(body.email ?? body.walletEmail ?? body.account);
   const code = normalizeCode(body.code ?? body.otp ?? body.verificationCode);
+  const requestId =
+    typeof body.requestId === 'string'
+      ? body.requestId.trim()
+      : typeof body.flowId === 'string'
+        ? body.flowId.trim()
+        : '';
 
   try {
-    const result = await verifyWalletOtp({ email, code });
+    const result = await verifyWalletOtp({ email, code, requestId });
     const secret = process.env.JWT_SECRET || 'h-wallet-dev-secret';
     const appId = process.env.VITE_APP_ID || process.env.EXPO_PUBLIC_APP_ID || 'new-h-wallet';
     const now = Date.now();
