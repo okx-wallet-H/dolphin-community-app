@@ -1,1 +1,1 @@
-export { default } from "./send-code";
+export { default } from './send-code';

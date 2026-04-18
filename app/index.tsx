@@ -1,13 +1,12 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -25,66 +24,44 @@ import {
   setSessionToken,
   setUserInfo,
 } from "@/lib/_core/auth";
-import {
-  getMe,
-  sendAgentWalletOtp,
-  verifyAgentWalletOtp,
-} from "@/lib/_core/api";
+import { getMe, sendAgentWalletOtp, verifyAgentWalletOtp } from "@/lib/_core/api";
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
-const BRAND_GRADIENT = ["#8F7CFF", "#7A67FF", "#6E5BFF"] as const;
-const PAGE_BG = "#FCFAFF";
-const PAGE_SOFT = "#F7F4FF";
-const CARD_BG = "#FFFFFF";
-const BORDER = "#E8EAF2";
-const TEXT_PRIMARY = "#1A1A2E";
-const TEXT_BODY = "#31324A";
-const TEXT_SECONDARY = "#666C85";
-const TEXT_PLACEHOLDER = "#A7ADC0";
-const PRIMARY = "#7C3AED";
-const ERROR = "#DC2626";
-const EMAIL_PLACEHOLDER = "请输入邮箱地址";
-const CODE_PLACEHOLDER = "请输入验证码";
+const BRAND_GRADIENT = ["#B790FF", "#8B67FF", "#6D52F6"] as const;
+const SEGMENT_BG = "#EEE7FF";
+const PAGE_BG = "#FCFBFF";
+const CARD_BG = "rgba(255,255,255,0.88)";
+const CARD_BORDER = "rgba(141, 110, 255, 0.14)";
+const INPUT_BORDER = "rgba(126, 89, 255, 0.42)";
+const TEXT_PRIMARY = "#211A3C";
+const TEXT_SECONDARY = "#5D5974";
+const TEXT_PLACEHOLDER = "#A29BBE";
+const ERROR = "#D83A52";
+const GLOW_PURPLE = "rgba(139,103,255,0.24)";
+
+type AuthMode = "login" | "register";
+type StatusTone = "default" | "success" | "error";
 
 const FEATURE_CARDS = [
   {
     key: "ai-wallet",
-    title: "社区对话",
-    icon: "chat-processing",
+    badge: "AI",
+    title: "AI 对话钱包",
+    cardTint: "rgba(255,255,255,0.72)",
   },
   {
     key: "agent-task",
-    title: "智能任务",
-    icon: "robot-excited-outline",
+    badge: "↗",
+    title: "Agent 自动任务",
+    cardTint: "rgba(255,250,241,0.86)",
   },
   {
     key: "asset-overview",
+    badge: "◎",
     title: "链上资产总览",
-    icon: "chart-pie",
+    cardTint: "rgba(237,255,255,0.92)",
   },
 ] as const;
-
-type StatusTone = "default" | "success" | "error";
-
-function LoginLogo() {
-  return (
-    <View style={styles.logoWrap}>
-      <Image
-        source={require("@/assets/images/hwallet-official-logo.png")}
-        style={styles.logoImage}
-        resizeMode="contain"
-      />
-    </View>
-  );
-}
-
-function FeatureIcon({
-  name,
-}: {
-  name: (typeof FEATURE_CARDS)[number]["icon"];
-}) {
-  return <MaterialCommunityIcons name={name} size={26} color={PRIMARY} />;
-}
 
 function normalizeErrorMessage(message: string, fallback: string): string {
   const normalized = message.trim();
@@ -96,88 +73,119 @@ function normalizeErrorMessage(message: string, fallback: string): string {
     NETWORK_ERROR: "网络连接失败，请检查网络",
     INVALID_CODE: "验证码不正确",
     INVALID_OTP: "验证码不正确",
+    INVALID_OR_EXPIRED_CODE: "验证码不正确或已过期",
     CODE_EXPIRED: "验证码已过期，请重新获取",
     UNAUTHORIZED: "登录已过期，请重新登录",
+    EMAIL_SERVICE_NOT_CONFIGURED: "邮件服务尚未配置完成",
+    VERIFY_FAILED: "验证码校验失败，请稍后重试",
   };
 
   if (exactMap[upper]) {
     return exactMap[upper];
   }
+
   if (/invalid url/i.test(normalized)) {
     return "服务器地址配置错误";
   }
-  if (
-    /network error|network request failed|failed to fetch/i.test(normalized)
-  ) {
+
+  if (/network error|network request failed|failed to fetch/i.test(normalized)) {
     return "网络连接失败，请检查网络";
   }
+
   if (/invalid email/i.test(normalized)) {
     return "邮箱格式不正确";
   }
+
+  if (/invalid code|invalid otp|verification code|expired/i.test(normalized)) {
+    return "验证码不正确或已过期";
+  }
+
+  if (/email service not configured/i.test(normalized)) {
+    return "邮件服务尚未配置完成";
+  }
+
   if (/send code failed/i.test(normalized)) {
-    return "验证码发送失败";
+    return "验证码发送失败，请稍后重试";
   }
-  if (/invalid code|invalid otp|verification code/i.test(normalized)) {
-    return "验证码不正确";
-  }
-  if (/expired/i.test(normalized) && /code|otp/i.test(normalized)) {
-    return "验证码已过期，请重新获取";
-  }
-  if (/unauthorized|token/i.test(normalized)) {
-    return "登录已过期，请重新登录";
+
+  if (/verify failed/i.test(normalized)) {
+    return "验证码校验失败，请稍后重试";
   }
 
   return normalized || fallback;
 }
 
+function buildDefaultStatus(mode: AuthMode) {
+  if (mode === "register") {
+    return "首次验证成功后会自动创建 H Wallet 账户并初始化钱包。";
+  }
+
+  return "请输入邮箱并完成验证码验证，即可继续进入 H Wallet。";
+}
+
+function buildPasswordHint(mode: AuthMode) {
+  if (mode === "register") {
+    return "当前注册主链路采用邮箱验证码完成身份校验，密码能力仍在接入中。";
+  }
+
+  return "当前版本以邮箱验证码登录为主，密码输入框用于保留与设计稿一致的交互结构。";
+}
+
+function LoginLogo() {
+  return (
+    <View style={styles.logoRow}>
+      <Image
+        source={require("@/assets/images/hwallet-official-logo.png")}
+        style={styles.logoImage}
+        resizeMode="contain"
+      />
+      <Text style={styles.logoTitle}>H Wallet</Text>
+    </View>
+  );
+}
+
 export default function LoginRoute() {
   const scrollRef = useRef<ScrollView | null>(null);
+  const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [statusText, setStatusText] = useState(
-    "输入邮箱并获取验证码，即可进入海豚社区。首次登录会自动完成账户初始化。",
-  );
+  const [password, setPassword] = useState("");
   const [statusTone, setStatusTone] = useState<StatusTone>("default");
+  const [statusText, setStatusText] = useState(buildDefaultStatus("login"));
   const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [maskedEmail, setMaskedEmail] = useState("");
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   useEffect(() => {
-    setEmail("");
-    setCode("");
-  }, []);
+    setStatusTone("default");
+    setStatusText(buildDefaultStatus(mode));
+  }, [mode]);
 
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
     const restoreSession = async () => {
       try {
-        // Web 端继续走现有登录页流程，原生端在启动时尝试恢复本地会话。
-        if (Platform.OS === "web") {
-          return;
-        }
-
-        const sessionToken = await getSessionToken();
-        if (!sessionToken) {
+        const token = await getSessionToken();
+        if (!token) {
           return;
         }
 
         const cachedUser = await getUserInfo();
         if (cachedUser) {
-          router.replace("/(tabs)/chat");
+          router.replace("/(tabs)/wallet");
           return;
         }
 
-        // 只有 token 没有用户缓存时，主动向服务端补一次用户信息并恢复登录态。
         const currentUser = await getMe();
         if (currentUser) {
           await setUserInfo({
             ...currentUser,
             lastSignedIn: new Date(currentUser.lastSignedIn),
           });
-          router.replace("/(tabs)/chat");
+          router.replace("/(tabs)/wallet");
           return;
         }
 
@@ -187,7 +195,7 @@ export default function LoginRoute() {
         await removeSessionToken();
         await clearUserInfo();
       } finally {
-        if (isMounted) {
+        if (mounted) {
           setIsRestoringSession(false);
         }
       }
@@ -196,13 +204,13 @@ export default function LoginRoute() {
     restoreSession();
 
     return () => {
-      isMounted = false;
+      mounted = false;
     };
   }, []);
 
   const helperTextColor = useMemo(() => {
     if (statusTone === "error") return ERROR;
-    if (statusTone === "success") return PRIMARY;
+    if (statusTone === "success") return "#6D52F6";
     return TEXT_SECONDARY;
   }, [statusTone]);
 
@@ -227,20 +235,24 @@ export default function LoginRoute() {
       setOtpSent(true);
       setMaskedEmail(result.maskedEmail);
       setStatusTone("success");
-      setStatusText(result.message || "验证码已发送，请查收邮箱。");
+      setStatusText(
+        /verification code sent/i.test(result.message)
+          ? "验证码已发送，请前往邮箱查收。"
+          : result.message || "验证码已发送，请前往邮箱查收。",
+      );
     } catch (error) {
       setStatusTone("error");
-      const msg =
+      setStatusText(
         error instanceof Error
           ? normalizeErrorMessage(error.message, "验证码发送失败，请稍后重试。")
-          : "验证码发送失败，请稍后重试。";
-      setStatusText(msg);
+          : "验证码发送失败，请稍后重试。",
+      );
     } finally {
       setIsSendingOtp(false);
     }
   };
 
-  const handleAuthAction = async () => {
+  const handleSubmit = async () => {
     if (!email.trim()) {
       setStatusTone("error");
       setStatusText("请输入邮箱地址。");
@@ -254,11 +266,20 @@ export default function LoginRoute() {
     }
 
     try {
-      const normalizedCode = code.trim().replace(/\s+/g, "");
-      setIsVerifying(true);
+      setIsSubmitting(true);
       setStatusTone("default");
-      setStatusText("正在验证验证码并进入首页...");
-      const result = await verifyAgentWalletOtp(email.trim(), normalizedCode);
+      setStatusText(mode === "register" ? "正在连接 OKX Agent Wallet 并创建钱包..." : "正在验证验证码并恢复 OKX Agent Wallet...");
+
+      const result = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ""));
+      if (!result.app_session_id) {
+        throw new Error("UNAUTHORIZED");
+      }
+      if (result.mockMode) {
+        throw new Error("当前返回仍是演示钱包，已阻止登录，请检查 OKX Agent Wallet 配置。");
+      }
+      if (!result.wallet.evmAddress || !result.wallet.solanaAddress) {
+        throw new Error("OKX Agent Wallet 未返回完整的钱包地址，请稍后重试。");
+      }
 
       await setSessionToken(result.app_session_id);
       await setUserInfo({
@@ -277,48 +298,35 @@ export default function LoginRoute() {
       );
 
       setStatusTone("success");
-      setStatusText(
-        result.mockMode
-          ? "验证成功，正在初始化首页。"
-          : "验证成功，正在进入首页。",
-      );
-      router.replace("/(tabs)/chat");
+      setStatusText(mode === "register" ? "OKX Agent Wallet 已创建，正在进入钱包首页。" : "OKX Agent Wallet 已恢复，正在进入钱包首页。");
+      router.replace("/(tabs)/wallet");
     } catch (error) {
       setStatusTone("error");
-      const fallback = "验证码登录失败，请稍后重试。";
-      const msg =
+      setStatusText(
         error instanceof Error
-          ? normalizeErrorMessage(error.message, fallback)
-          : fallback;
-      setStatusText(msg);
+          ? normalizeErrorMessage(error.message, "登录失败，请稍后重试。")
+          : "登录失败，请稍后重试。",
+      );
     } finally {
-      setIsVerifying(false);
+      setIsSubmitting(false);
     }
   };
 
   if (isRestoringSession) {
     return (
-      <SafeAreaView
-        style={styles.safeArea}
-        edges={["top", "left", "right", "bottom"]}
-      >
+      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
         <View style={styles.restoringContainer}>
           <LoginLogo />
-          <ActivityIndicator size="large" color={PRIMARY} />
+          <ActivityIndicator size="large" color="#7C5DFF" />
           <Text style={styles.restoringTitle}>正在恢复登录状态</Text>
-          <Text style={styles.restoringSubtitle}>
-            检测到本地会话后会自动进入主界面
-          </Text>
+          <Text style={styles.restoringSubtitle}>检测到有效会话后将自动进入钱包首页</Text>
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView
-      style={styles.safeArea}
-      edges={["top", "left", "right", "bottom"]}
-    >
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -330,55 +338,71 @@ export default function LoginRoute() {
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
-          <View style={styles.pageGlowTop} />
-          <View style={styles.pageGlowBottom} />
+          <View style={styles.topGlow} />
+          <View style={styles.sideGlow} />
+          <View style={styles.bottomGlow} />
 
           <View style={styles.container}>
-            <View style={styles.heroBlock}>
+            <View style={styles.heroSection}>
               <LoginLogo />
-              <Text style={styles.brandTitle}>海豚社区</Text>
-              <Text style={styles.heroSubtitle}>
-                对话式智能钱包社区
-              </Text>
+              <Text style={styles.subtitle}>对话式 Web3 钱包</Text>
             </View>
 
             <View style={styles.formCard}>
-              <View style={styles.otpNotice}>
-                <View style={styles.otpNoticeBadge}>
-                  <Text style={styles.otpNoticeBadgeText}>纯验证码登录</Text>
+              <View style={styles.segmentWrap}>
+                <View style={styles.segmentBg}>
+                  {(["login", "register"] as const).map((item) => {
+                    const active = item === mode;
+                    return (
+                      <Pressable
+                        key={item}
+                        style={styles.segmentPressable}
+                        onPress={() => setMode(item)}
+                      >
+                        {active ? (
+                          <LinearGradient
+                            colors={BRAND_GRADIENT}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.segmentActivePill}
+                          >
+                            <Text style={styles.segmentActiveText}>{item === "login" ? "登录" : "注册"}</Text>
+                          </LinearGradient>
+                        ) : (
+                          <View style={styles.segmentInactivePill}>
+                            <Text style={styles.segmentInactiveText}>{item === "login" ? "登录" : "注册"}</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <Text style={styles.otpNoticeTitle}>无需密码，验证即进入</Text>
-                <Text style={styles.otpNoticeDesc}>
-                  输入邮箱获取验证码，完成验证后自动登录；如果是首次登录，会自动完成账户初始化并进入主页。
-                </Text>
               </View>
 
-              <View style={styles.fieldGroup}>
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  onFocus={handleFocus}
-                  placeholder={EMAIL_PLACEHOLDER}
-                  defaultValue=""
-                  placeholderTextColor={TEXT_PLACEHOLDER}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="off"
-                  importantForAutofill="no"
-                />
-              </View>
-
-              <View style={styles.fieldGroup}>
-                <View style={styles.otpRow}>
+              <View style={styles.fieldStack}>
+                <View style={styles.inputShell}>
                   <TextInput
-                    style={[styles.input, styles.otpInput]}
+                    style={styles.input}
+                    value={email}
+                    onChangeText={setEmail}
+                    onFocus={handleFocus}
+                    placeholder="请输入邮箱地址"
+                    placeholderTextColor={TEXT_PLACEHOLDER}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    importantForAutofill="no"
+                  />
+                </View>
+
+                <View style={styles.otpShell}>
+                  <TextInput
+                    style={styles.otpInput}
                     value={code}
                     onChangeText={(value) => setCode(value.replace(/\D/g, ""))}
                     onFocus={handleFocus}
-                    placeholder={CODE_PLACEHOLDER}
-                    defaultValue=""
+                    placeholder="请输入验证码"
                     placeholderTextColor={TEXT_PLACEHOLDER}
                     keyboardType="number-pad"
                     maxLength={6}
@@ -403,60 +427,69 @@ export default function LoginRoute() {
                       {isSendingOtp ? (
                         <ActivityIndicator color="#FFFFFF" size="small" />
                       ) : (
-                        <Text style={styles.sendCodeText}>获取验证码</Text>
+                        <Text style={styles.sendCodeText}>发送验证码</Text>
                       )}
                     </LinearGradient>
                   </Pressable>
+                </View>
+
+                <View style={styles.inputShell}>
+                  <TextInput
+                    style={styles.input}
+                    value={password}
+                    onChangeText={setPassword}
+                    onFocus={handleFocus}
+                    placeholder="请输入密码"
+                    placeholderTextColor={TEXT_PLACEHOLDER}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    importantForAutofill="no"
+                  />
                 </View>
               </View>
 
               <Pressable
                 style={({ pressed }) => [
-                  styles.loginButton,
-                  (pressed || isVerifying) && styles.buttonPressed,
-                  isVerifying && styles.buttonDisabled,
+                  styles.primaryButton,
+                  (pressed || isSubmitting) && styles.buttonPressed,
+                  isSubmitting && styles.buttonDisabled,
                 ]}
-                onPress={handleAuthAction}
-                disabled={isVerifying}
+                onPress={handleSubmit}
+                disabled={isSubmitting}
               >
                 <LinearGradient
                   colors={BRAND_GRADIENT}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.loginButtonGradient}
+                  style={styles.primaryButtonGradient}
                 >
-                  {isVerifying ? (
+                  {isSubmitting ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <Text style={styles.loginButtonText}>立即登录</Text>
+                    <Text style={styles.primaryButtonText}>继续进入</Text>
                   )}
                 </LinearGradient>
               </Pressable>
 
-              <Text style={[styles.helperText, { color: helperTextColor }]}>
-                {statusText}
-              </Text>
+              <Text style={[styles.statusText, { color: helperTextColor }]}>{statusText}</Text>
+              <Text style={styles.passwordHint}>{buildPasswordHint(mode)}</Text>
               {otpSent ? (
-                <Text style={styles.tipText}>
-                  验证码已发送至 {maskedEmail || email.trim()}，输入后将直接登录。
-                </Text>
+                <Text style={styles.otpHint}>验证码已发送至 {maskedEmail || email.trim()}，请查收后输入。</Text>
               ) : null}
             </View>
 
-            <View style={styles.featureSection}>
+            <View style={styles.featureRow}>
               {FEATURE_CARDS.map((item) => (
-                <View key={item.key} style={styles.featureCard}>
-                  <View style={styles.featureIconWrap}>
-                    <FeatureIcon name={item.icon} />
+                <View key={item.key} style={[styles.featureCard, { backgroundColor: item.cardTint }]}>
+                  <View style={styles.featureBadge}>
+                    <Text style={styles.featureBadgeText}>{item.badge}</Text>
                   </View>
                   <Text style={styles.featureTitle}>{item.title}</Text>
                 </View>
               ))}
             </View>
-
-            <Text style={styles.footerText}>
-              安全托管您的会话与登录状态，重启应用后可自动恢复访问。
-            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -475,236 +508,289 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
   },
-  pageGlowTop: {
+  topGlow: {
     position: "absolute",
-    top: -118,
-    right: -28,
-    width: 276,
-    height: 276,
-    borderRadius: 138,
-    backgroundColor: "#E9DDFF",
-    opacity: 0.72,
+    top: -48,
+    right: -14,
+    width: 248,
+    height: 248,
+    borderRadius: 124,
+    backgroundColor: "rgba(231,220,255,0.84)",
   },
-  pageGlowBottom: {
+  sideGlow: {
     position: "absolute",
-    bottom: -132,
-    left: -64,
-    width: 316,
-    height: 316,
-    borderRadius: 158,
-    backgroundColor: "#F3EDFF",
-    opacity: 0.96,
+    top: 220,
+    right: -60,
+    width: 180,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(246,240,255,0.92)",
+  },
+  bottomGlow: {
+    position: "absolute",
+    bottom: -30,
+    left: -40,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: "rgba(245,240,255,0.98)",
   },
   container: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 36,
+    paddingTop: 30,
+    paddingBottom: 34,
   },
-  heroBlock: {
+  heroSection: {
     alignItems: "center",
-    marginTop: 10,
-    marginBottom: 28,
+    marginTop: 20,
+    marginBottom: 30,
   },
-  logoWrap: {
-    width: 132,
-    height: 132,
-    borderRadius: 34,
-    backgroundColor: "#F6F1FF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 18,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    elevation: 6,
-  },
-  logoImage: {
-    width: 108,
-    height: 108,
-  },
-  brandTitle: {
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: "800",
-    color: TEXT_PRIMARY,
-    letterSpacing: 0.2,
-  },
-  heroSubtitle: {
-    marginTop: 10,
-    fontSize: 15,
-    lineHeight: 23,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-    paddingHorizontal: 12,
-  },
-  formCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.82)",
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: "rgba(124, 58, 237, 0.12)",
-    padding: 22,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.10,
-    shadowRadius: 28,
-    elevation: 6,
-  },
-  otpNotice: {
-    backgroundColor: "rgba(245,243,255,0.72)",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.10)",
-    padding: 16,
-    marginBottom: 18,
-    gap: 8,
-  },
-  otpNoticeBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(124,58,237,0.12)",
-  },
-  otpNoticeBadgeText: {
-    color: PRIMARY,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "700",
-  },
-  otpNoticeTitle: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "800",
-    color: TEXT_PRIMARY,
-  },
-  otpNoticeDesc: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: TEXT_SECONDARY,
-  },
-  fieldGroup: {
-    marginTop: 12,
-  },
-  input: {
-    height: 52,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(124, 58, 237, 0.12)",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    paddingHorizontal: 16,
-    fontSize: 16,
-    lineHeight: 22,
-    color: TEXT_BODY,
-  },
-  otpRow: {
+  logoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "center",
+  },
+  logoImage: {
+    width: 58,
+    height: 58,
+    marginRight: 12,
+  },
+  logoTitle: {
+    fontSize: 38,
+    lineHeight: 44,
+    fontWeight: "800",
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.8,
+  },
+  subtitle: {
+    marginTop: 8,
+    fontSize: 18,
+    lineHeight: 24,
+    color: TEXT_PRIMARY,
+    textAlign: "center",
+  },
+  formCard: {
+    backgroundColor: CARD_BG,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    paddingHorizontal: 22,
+    paddingTop: 26,
+    paddingBottom: 22,
+    shadowColor: "#B28BFF",
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 20 },
+    shadowRadius: 34,
+    elevation: 10,
+  },
+  segmentWrap: {
+    alignItems: "center",
+    marginBottom: 22,
+  },
+  segmentBg: {
+    width: 280,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: SEGMENT_BG,
+    borderRadius: 999,
+    padding: 6,
+  },
+  segmentPressable: {
+    flex: 1,
+  },
+  segmentActivePill: {
+    height: 56,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#8B67FF",
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 5,
+  },
+  segmentInactivePill: {
+    height: 56,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  segmentActiveText: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  segmentInactiveText: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "500",
+    color: TEXT_SECONDARY,
+  },
+  fieldStack: {
+    gap: 18,
+  },
+  inputShell: {
+    height: 66,
+    borderRadius: 999,
+    borderWidth: 1.4,
+    borderColor: INPUT_BORDER,
+    backgroundColor: "rgba(255,255,255,0.98)",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+    shadowColor: GLOW_PURPLE,
+    shadowOpacity: 1,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  input: {
+    fontSize: 18,
+    lineHeight: 24,
+    color: TEXT_PRIMARY,
+    paddingVertical: 0,
+  },
+  otpShell: {
+    height: 66,
+    borderRadius: 999,
+    borderWidth: 1.4,
+    borderColor: INPUT_BORDER,
+    backgroundColor: "rgba(255,255,255,0.98)",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 22,
+    paddingRight: 8,
+    shadowColor: GLOW_PURPLE,
+    shadowOpacity: 1,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 16,
+    elevation: 3,
   },
   otpInput: {
     flex: 1,
+    fontSize: 18,
+    lineHeight: 24,
+    color: TEXT_PRIMARY,
+    paddingVertical: 0,
+    paddingRight: 12,
   },
   sendCodeButton: {
-    width: 120,
-    height: 52,
-    borderRadius: 16,
+    width: 168,
+    height: 48,
+    borderRadius: 999,
     overflow: "hidden",
   },
   sendCodeGradient: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 16,
+    borderRadius: 999,
   },
   sendCodeText: {
-    color: "#FFFFFF",
-    fontSize: 15,
+    fontSize: 16,
     lineHeight: 20,
     fontWeight: "700",
+    color: "#FFFFFF",
   },
-  loginButton: {
-    marginTop: 18,
-    height: 52,
-    borderRadius: 16,
+  primaryButton: {
+    marginTop: 26,
+    height: 66,
+    borderRadius: 999,
     overflow: "hidden",
+    shadowColor: "#8A62FF",
+    shadowOpacity: 0.26,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 22,
+    elevation: 6,
   },
-  loginButtonGradient: {
+  primaryButtonGradient: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 16,
+    borderRadius: 999,
   },
-  loginButtonText: {
-    fontSize: 18,
-    lineHeight: 24,
+  primaryButtonText: {
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: "800",
     color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
   buttonPressed: {
-    opacity: 0.9,
+    opacity: 0.92,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.72,
   },
-  helperText: {
-    marginTop: 14,
+  statusText: {
+    marginTop: 16,
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
   },
-  tipText: {
-    marginTop: 10,
-    fontSize: 13,
+  passwordHint: {
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+    textAlign: "center",
+    opacity: 0.9,
+  },
+  otpHint: {
+    marginTop: 8,
+    fontSize: 12,
     lineHeight: 18,
     color: TEXT_SECONDARY,
     textAlign: "center",
   },
-  featureSection: {
+  featureRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 28,
     gap: 12,
+    marginTop: 26,
   },
   featureCard: {
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.78)",
     borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "rgba(124, 58, 237, 0.10)",
-    paddingVertical: 18,
-    paddingHorizontal: 12,
+    paddingTop: 18,
+    paddingBottom: 20,
+    paddingHorizontal: 10,
     alignItems: "center",
-    shadowColor: "#8B5CF6",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.72)",
+    shadowColor: "rgba(102,74,185,0.20)",
+    shadowOpacity: 1,
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
+    shadowRadius: 20,
     elevation: 3,
   },
-  featureIconWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 18,
-    backgroundColor: "rgba(245, 239, 255, 0.92)",
+  featureBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(255,255,255,0.78)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
+    shadowColor: "rgba(139,103,255,0.18)",
+    shadowOpacity: 1,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  featureBadgeText: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: "700",
+    color: "#835CFF",
   },
   featureTitle: {
     fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "700",
+    lineHeight: 19,
     color: TEXT_PRIMARY,
     textAlign: "center",
-  },
-  footerText: {
-    marginTop: 26,
-    fontSize: 13,
-    lineHeight: 20,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-    opacity: 0.9,
+    fontWeight: "600",
   },
   restoringContainer: {
     flex: 1,
@@ -714,16 +800,16 @@ const styles = StyleSheet.create({
     backgroundColor: PAGE_BG,
   },
   restoringTitle: {
-    marginTop: 20,
+    marginTop: 18,
     fontSize: 20,
-    lineHeight: 28,
+    lineHeight: 26,
     fontWeight: "700",
     color: TEXT_PRIMARY,
   },
   restoringSubtitle: {
     marginTop: 8,
     fontSize: 14,
-    lineHeight: 21,
+    lineHeight: 20,
     color: TEXT_SECONDARY,
     textAlign: "center",
   },

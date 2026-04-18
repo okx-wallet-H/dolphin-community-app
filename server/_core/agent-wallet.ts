@@ -143,6 +143,20 @@ function isRealOkxConfigured() {
   return Boolean(getOkxApiKey() && getOkxSecretKey() && getOkxPassphrase());
 }
 
+function assertRealOkxConfigured() {
+  const missing = [
+    ["OKX_AGENT_WALLET_API_KEY / OKX_API_KEY", getOkxApiKey()],
+    ["OKX_AGENT_WALLET_SECRET_KEY / OKX_SECRET_KEY", getOkxSecretKey()],
+    ["OKX_AGENT_WALLET_PASSPHRASE / OKX_PASSPHRASE", getOkxPassphrase()],
+  ]
+    .filter(([, value]) => !value)
+    .map(([label]) => label);
+
+  if (missing.length > 0) {
+    throw new Error(`OKX Agent Wallet 未配置完整，缺少：${missing.join("、")}`);
+  }
+}
+
 function buildSignedHeaders(method: string, requestPath: string, body: string) {
   const timestamp = new Date().toISOString();
   const secretKey = getOkxSecretKey();
@@ -386,35 +400,8 @@ export async function sendWalletOtp(email: string): Promise<SendOtpResponse> {
     throw new Error("请输入有效的邮箱地址");
   }
 
-  if (isRealOkxConfigured()) {
-    try {
-      return await sendOtpByOkx(normalizedEmail);
-    } catch (error) {
-      console.warn("[Agent Wallet] sendWalletOtp fallback to mock:", error);
-      if (getEnv("OKX_AGENT_WALLET_STRICT") === "1") {
-        throw error;
-      }
-    }
-  }
-
-  const code = getMockOtpCode();
-  const requestId = buildRequestId("mockotp");
-  pendingOtpStore.set(normalizedEmail, {
-    code,
-    expiresAt: Date.now() + OTP_TTL_MS,
-    requestId,
-  });
-
-  return {
-    success: true,
-    requestId,
-    maskedEmail: maskEmail(normalizedEmail),
-    expiresIn: Math.floor(OTP_TTL_MS / 1000),
-    mockMode: true,
-    message: "验证码已发送到你的邮箱（当前为演示模式）",
-    // 仅在本地开发环境返回debugCode，不在任何远程环境暴露
-    debugCode: process.env.NODE_ENV === "development" && process.env.VITE_APP_ENV === "local" ? code : undefined,
-  };
+  assertRealOkxConfigured();
+  return sendOtpByOkx(normalizedEmail);
 }
 
 export async function verifyWalletOtp(input: VerifyOtpInput): Promise<VerifyOtpResponse> {
@@ -429,53 +416,6 @@ export async function verifyWalletOtp(input: VerifyOtpInput): Promise<VerifyOtpR
     throw new Error("请输入验证码");
   }
 
-  if (isRealOkxConfigured()) {
-    try {
-      return await verifyOtpByOkx({ email, code });
-    } catch (error) {
-      console.warn("[Agent Wallet] verifyWalletOtp fallback to mock:", error);
-      if (getEnv("OKX_AGENT_WALLET_STRICT") === "1") {
-        throw error;
-      }
-    }
-  }
-
-  const mockCode = getMockOtpCode();
-  const pending = pendingOtpStore.get(email);
-
-  if (!pending) {
-    if (code !== mockCode) {
-      throw new Error("请先获取验证码");
-    }
-  } else {
-    if (pending.expiresAt < Date.now()) {
-      pendingOtpStore.delete(email);
-      throw new Error("验证码已过期，请重新获取");
-    }
-
-    const expectedCode = normalizeOtpCode(pending.code);
-    if (code !== expectedCode && code !== mockCode) {
-      throw new Error("验证码错误，请重新输入");
-    }
-
-    pendingOtpStore.delete(email);
-  }
-
-  const existingWallet = walletStore.get(email);
-  const wallet = existingWallet ?? buildDeterministicWallet(email);
-  if (!existingWallet) {
-    walletStore.set(email, wallet);
-  }
-
-  return {
-    success: true,
-    wallet: {
-      email,
-      evmAddress: wallet.evmAddress,
-      solanaAddress: wallet.solanaAddress,
-    },
-    isNewWallet: !existingWallet,
-    sessionUser: buildSessionUser(email),
-    mockMode: true,
-  };
+  assertRealOkxConfigured();
+  return verifyOtpByOkx({ email, code });
 }
