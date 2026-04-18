@@ -1981,7 +1981,7 @@ export default function ChatScreen() {
                         <Text style={styles.swapProgressTitle}>结果入口</Text>
                         <Text style={styles.swapProgressLabel}>{statusLabel}</Text>
                         <Text style={styles.cardHelperTextOnDark}>
-                          交易由 Agent 与 OKX 交易能力继续处理，最终结果以对应币种账号明细为主；若长时间未达，将由人工客服跟进。
+                          结果统一进入对应币种账号明细；若长时间未达，再由人工客服跟进。
                         </Text>
                       </View>
 
@@ -1995,7 +1995,7 @@ export default function ChatScreen() {
                           </Pressable>
                         ) : (
                           <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                            <Text style={styles.primaryActionText}>查看账号明细</Text>
+                            <Text style={styles.primaryGhostActionText}>查看账号明细</Text>
                           </Pressable>
                         )}
                       </View>
@@ -2053,7 +2053,7 @@ export default function ChatScreen() {
                         <Text style={styles.swapProgressTitle}>结果入口</Text>
                         <Text style={styles.swapProgressLabel}>{statusLabel}</Text>
                         <Text style={styles.cardHelperTextOnDark}>
-                          转账发起后不再由聊天主线程追单，最终结果会回到对应币种账号明细；若长期未达，将由人工客服协助处理。
+                          结果会统一回到对应币种账号明细；若长期未达，再由人工客服协助处理。
                         </Text>
                       </View>
 
@@ -2544,6 +2544,7 @@ const styles = StyleSheet.create({
   cardActionRow: {
     flexDirection: "row",
     gap: 10,
+    marginTop: 2,
   },
   cardHelperText: {
     fontSize: 12,
@@ -2556,13 +2557,13 @@ const styles = StyleSheet.create({
     color: ManusColors.textSecondary,
   },
   swapProgressPanel: {
-    marginTop: 4,
+    marginTop: 2,
     borderRadius: ManusRadius.control,
     backgroundColor: ManusColors.glass,
     borderWidth: 1,
     borderColor: ManusColors.divider,
     padding: ManusSpacing.md,
-    gap: 8,
+    gap: 6,
   },
   swapProgressTitle: {
     ...ManusTypography.caption,
@@ -2772,6 +2773,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: ManusColors.divider,
     paddingHorizontal: 14,
+  },
+  primaryGhostActionText: {
+    ...ManusTypography.secondary,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: ManusColors.primary,
   },
   memeRow: {
     flexDirection: "row",

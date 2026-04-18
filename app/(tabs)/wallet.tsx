@@ -18,6 +18,14 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
+  ManusColors,
+  ManusEmphasisShadow,
+  ManusRadius,
+  ManusShadow,
+  ManusSpacing,
+  ManusTypography,
+} from "@/constants/manus-ui";
+import {
   getAccountAssets,
   getOnchainApprovals,
   type AgentWalletAssetsResponse,
@@ -28,14 +36,14 @@ import {
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
 const WALLET_REFRESH_EVENT = "hwallet:refresh-wallet-assets";
-const PRIMARY = "#7C3AED";
-const PRIMARY_LIGHT = "#F5F3FF";
+const PRIMARY = ManusColors.primary;
+const PRIMARY_LIGHT = ManusColors.surfaceTint;
 const PAGE_BG = "#FCFAFF";
-const BORDER = "#E8EAF2";
-const TEXT_PRIMARY = "#1A1A2E";
+const BORDER = ManusColors.divider;
+const TEXT_PRIMARY = ManusColors.text;
 
-const TEXT_SECONDARY = "#666C85";
-const ERROR = "#DC2626";
+const TEXT_SECONDARY = ManusColors.textSecondary;
+const ERROR = ManusColors.danger;
 
 type ChainCard = AgentWalletAssetsResponse["walletAddresses"][number];
 type ApprovalGroup = OnchainApprovalsResponse["approvals"][number];
@@ -545,6 +553,13 @@ export default function WalletRoute() {
             </View>
           ) : null}
 
+          {!loading && !errorText ? (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>链上资产</Text>
+              <Text style={styles.sectionHint}>点击币种进入账号明细</Text>
+            </View>
+          ) : null}
+
           {!loading && !errorText
             ? chainCards.map((chain) => (
                 <View
@@ -698,40 +713,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+    paddingHorizontal: ManusSpacing.page,
+    paddingBottom: ManusSpacing.xl,
   },
   heroCard: {
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: ManusRadius.sheet,
+    padding: ManusSpacing.xl,
+    marginBottom: ManusSpacing.xl,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "rgba(110,91,255,0.12)",
-    shadowColor: "#C7BAFF",
-    shadowOpacity: 0.18,
-    shadowOffset: { width: 0, height: 12 },
-    shadowRadius: 24,
-    elevation: 4,
+    ...ManusEmphasisShadow,
   },
   heroLabel: {
-    fontSize: 13,
-    lineHeight: 18,
+    ...ManusTypography.caption,
     color: PRIMARY,
     marginBottom: 4,
   },
   heroValue: {
-    fontSize: 32,
+    ...ManusTypography.numericHero,
     lineHeight: 40,
-    fontWeight: "700",
     color: TEXT_PRIMARY,
     marginBottom: 8,
   },
   heroSubText: {
+    ...ManusTypography.secondary,
     fontSize: 13,
     lineHeight: 18,
     color: TEXT_SECONDARY,
-    marginBottom: 20,
+    marginBottom: ManusSpacing.xl,
   },
   addressList: {
     flexDirection: "row",
@@ -741,12 +751,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 99,
+    borderRadius: ManusRadius.pill,
     paddingVertical: 6,
     paddingHorizontal: 12,
     gap: 6,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
+    borderColor: BORDER,
   },
   addressChipLabel: {
     fontSize: 13,
@@ -865,16 +875,12 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   chainAssetCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.82)",
-    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    borderRadius: ManusRadius.sheet,
     borderWidth: 1,
     borderColor: "rgba(124,58,237,0.10)",
     overflow: "hidden",
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 3,
+    ...ManusShadow,
   },
   assetRow: {
     flexDirection: "row",
@@ -958,8 +964,8 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   quickActionGrid: {
-    flexDirection: "row",
-    gap: 12,
+    flexDirection: "column",
+    gap: 10,
     marginBottom: 18,
   },
   securitySection: {
@@ -1033,17 +1039,12 @@ const styles = StyleSheet.create({
   },
   quickActionCard: {
     flex: 1,
-    borderRadius: 22,
+    borderRadius: ManusRadius.card,
     borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.10)",
-    backgroundColor: "rgba(255,255,255,0.82)",
-    padding: 16,
-    minHeight: 142,
-    shadowColor: "#7C3AED",
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 18,
-    elevation: 3,
+    borderColor: "rgba(124,58,237,0.08)",
+    backgroundColor: ManusColors.surfaceTint,
+    padding: 15,
+    minHeight: 108,
   },
   quickActionIconWrap: {
     width: 42,
@@ -1055,15 +1056,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   quickActionTitle: {
-    fontSize: 16,
-    lineHeight: 22,
+    ...ManusTypography.secondary,
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: "700",
     color: TEXT_PRIMARY,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   quickActionDesc: {
-    fontSize: 13,
-    lineHeight: 20,
+    ...ManusTypography.caption,
+    lineHeight: 18,
     color: TEXT_SECONDARY,
   },
   sectionHeader: {
@@ -1073,13 +1075,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
+    ...ManusTypography.sectionTitle,
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800",
+    fontWeight: "700",
     color: TEXT_PRIMARY,
   },
   sectionHint: {
-    fontSize: 12,
+    ...ManusTypography.caption,
     lineHeight: 18,
     color: TEXT_SECONDARY,
   },
@@ -1087,10 +1090,10 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   taskCard: {
-    borderRadius: 22,
+    borderRadius: ManusRadius.card,
     borderWidth: 1,
     borderColor: BORDER,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "rgba(255,255,255,0.88)",
     padding: 16,
     marginBottom: 12,
   },

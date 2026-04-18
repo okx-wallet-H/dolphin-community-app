@@ -11,19 +11,27 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { ScreenContainer } from "@/components/screen-container";
 import {
+  ManusColors,
+  ManusEmphasisShadow,
+  ManusRadius,
+  ManusShadow,
+  ManusSpacing,
+  ManusTypography,
+} from "@/constants/manus-ui";
+import {
   parseChatAiIntent,
   searchDeFiProductsByMcp,
   type DeFiProductItem,
 } from "@/lib/_core/api";
-const PRIMARY = "#7C3AED";
-const PRIMARY_LIGHT = "#F5F3FF";
-const PAGE_BG = "#FFFFFF";
-const CARD_BG = "#FFFFFF";
-const BORDER = "#E8EAF2";
-const TEXT_PRIMARY = "#1A1A2E";
-const TEXT_BODY = "#31324A";
-const TEXT_SECONDARY = "#666C85";
-const SUCCESS = "#16A34A";
+const PRIMARY = ManusColors.primary;
+const PRIMARY_LIGHT = ManusColors.surfaceTint;
+const PAGE_BG = ManusColors.surface;
+const CARD_BG = ManusColors.surface;
+const BORDER = ManusColors.divider;
+const TEXT_PRIMARY = ManusColors.text;
+const TEXT_BODY = ManusColors.text;
+const TEXT_SECONDARY = ManusColors.textSecondary;
+const SUCCESS = ManusColors.success;
 const WARNING = "#B45309";
 
 type StrategyCard = {
@@ -171,7 +179,7 @@ export default function EarnScreen() {
             </View>
 
               <Text style={styles.pageSubtitle}>
-                赚币页现在只展示通过 OKX OnchainOS 检索到的真实投资产品；若当前没有真实产品，页面将直接展示空状态，不再展示任何演示策略。
+                赚币页只展示真实投资产品；如果当前没有真实结果，页面将直接显示空状态。
               </Text>
 
 
@@ -186,7 +194,7 @@ export default function EarnScreen() {
                 当前更适合“核心资产稳健配置 + 低波动垫层”的组合
               </Text>
               <Text style={styles.heroSummary}>
-                当前卡片全部来自真实 DeFi 搜索结果，可继续查看协议、链路、APR 与 TVL；执行结果统一以账号明细为主，不再展示演示型兜底内容。
+                当前卡片全部来自真实 DeFi 搜索结果；执行结果统一回到账号明细，不再展示演示型兜底内容。
               </Text>
 
               <View style={styles.heroMetricRow}>
@@ -360,12 +368,12 @@ export default function EarnScreen() {
 const styles = StyleSheet.create({
   contentContainer: {
     paddingBottom: 148,
-    gap: 16,
-    backgroundColor: "#FFFFFF",
+    gap: ManusSpacing.lg,
+    backgroundColor: PAGE_BG,
   },
   headerStack: {
-    gap: 16,
-    marginBottom: 12,
+    gap: ManusSpacing.lg,
+    marginBottom: 10,
   },
   topBar: {
     flexDirection: "row",
@@ -374,18 +382,16 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   pageTitle: {
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: "800",
+    ...ManusTypography.brandTitle,
     color: TEXT_PRIMARY,
   },
   inlineLink: {
-    borderRadius: 999,
+    borderRadius: ManusRadius.pill,
     paddingHorizontal: 14,
     paddingVertical: 10,
     backgroundColor: PRIMARY_LIGHT,
     borderWidth: 1,
-    borderColor: "#DDD6FE",
+    borderColor: BORDER,
   },
   inlineLinkText: {
     fontSize: 13,
@@ -394,32 +400,32 @@ const styles = StyleSheet.create({
     color: PRIMARY,
   },
   pageSubtitle: {
-    fontSize: 14,
+    ...ManusTypography.secondary,
     lineHeight: 22,
     color: TEXT_SECONDARY,
   },
   heroCard: {
-    borderRadius: 28,
-    padding: 20,
-    gap: 12,
+    borderRadius: ManusRadius.sheet,
+    padding: ManusSpacing.xl,
+    gap: ManusSpacing.md,
     borderWidth: 1,
     borderColor: "#E9DDFF",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: CARD_BG,
+    ...ManusEmphasisShadow,
   },
   heroEyebrow: {
-    fontSize: 12,
-    lineHeight: 16,
+    ...ManusTypography.caption,
     fontWeight: "700",
     color: TEXT_SECONDARY,
   },
   heroTitle: {
+    ...ManusTypography.pageTitle,
     fontSize: 24,
     lineHeight: 30,
-    fontWeight: "800",
     color: TEXT_PRIMARY,
   },
   heroSummary: {
-    fontSize: 14,
+    ...ManusTypography.secondary,
     lineHeight: 22,
     color: TEXT_BODY,
   },
@@ -464,17 +470,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 110,
     minWidth: 0,
-    borderRadius: 18,
+    borderRadius: ManusRadius.control,
     backgroundColor: "rgba(255, 255, 255, 0.88)",
     borderWidth: 1,
     borderColor: "rgba(232, 234, 242, 0.5)",
     padding: 14,
     gap: 4,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
   },
   insightLabel: {
     fontSize: 12,
@@ -495,9 +496,9 @@ const styles = StyleSheet.create({
   quickActionCard: {
     width: "100%",
     minWidth: 0,
-    borderRadius: 22,
-    padding: 16,
-    backgroundColor: CARD_BG,
+    borderRadius: ManusRadius.card,
+    padding: 15,
+    backgroundColor: PRIMARY_LIGHT,
     borderWidth: 1,
     borderColor: BORDER,
     gap: 6,
@@ -544,12 +545,13 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   emptyStateCard: {
-    borderRadius: 22,
+    borderRadius: ManusRadius.card,
     padding: 18,
     backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: BORDER,
     gap: 8,
+    ...ManusShadow,
   },
   emptyStateTitle: {
     fontSize: 16,
@@ -566,9 +568,10 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   sectionTitle: {
+    ...ManusTypography.sectionTitle,
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800",
+    fontWeight: "700",
     color: TEXT_PRIMARY,
   },
   sectionHint: {
@@ -577,17 +580,13 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   strategyCard: {
-    borderRadius: 24,
+    borderRadius: ManusRadius.sheet,
     padding: 18,
     backgroundColor: "rgba(255, 255, 255, 0.92)",
     borderWidth: 1,
     borderColor: "rgba(232, 234, 242, 0.5)",
     gap: 14,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 2,
+    ...ManusShadow,
   },
   strategyCardSelected: {
     borderColor: "#C4B5FD",
