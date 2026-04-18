@@ -19,6 +19,11 @@ import { ScreenContainer } from "@/components/screen-container";
 import { TopTabs } from "@/components/TopTabs";
 import { buildXLayerBuilderCodePayload } from "@/lib/builder-code";
 import {
+  buildConfirmCard,
+  detectAgentIntent,
+  type AgentSwapIntent,
+} from "@/lib/agent-wallet-intent";
+import {
   executeOnchainSwap,
   getAccountAssets,
   getMarketSnapshotByMcp,
@@ -939,22 +944,50 @@ export default function ChatScreen() {
   );
 
   const runSwapFlow = useCallback(
-    async (content: string, wallet: StoredWalletSnapshot, seed: number) => {
-      const parsed = await parseDexSwapIntent(content);
-      if (parsed.intent.action !== "swap") {
-        return [
-          {
-            id: `assistant-${seed}-swap-unknown`,
-            role: "assistant",
-            title: "兑换信息还不完整",
-            content:
-              "我已经识别到你想发起兑换，但当前还缺少明确的金额或币种信息。你可以试试“把 100 USDT 换成 ETH”这种说法。",
-            tone: "warning",
-          },
-        ] satisfies ChatMessage[];
+    async (
+      content: string,
+      wallet: StoredWalletSnapshot,
+      seed: number,
+      presetIntent?: AgentSwapIntent,
+    ) => {
+      let parsedSwap: {
+        amount: string;
+        fromSymbol: string;
+        toSymbol: string;
+        chainKind: DexChainKind | null;
+      } | null = null;
+
+      if (presetIntent) {
+        parsedSwap = {
+          amount: presetIntent.payload.amount,
+          fromSymbol: presetIntent.payload.fromSymbol,
+          toSymbol: presetIntent.payload.toSymbol,
+          chainKind: presetIntent.payload.chainKind,
+        };
+      } else {
+        const parsed = await parseDexSwapIntent(content);
+        if (parsed.intent.action !== "swap") {
+          return [
+            {
+              id: `assistant-${seed}-swap-unknown`,
+              role: "assistant",
+              title: "兑换信息还不完整",
+              content:
+                "我已经识别到你想发起兑换，但当前还缺少明确的金额或币种信息。你可以试试“把 100 USDT 换成 ETH”这种说法。",
+              tone: "warning",
+            },
+          ] satisfies ChatMessage[];
+        }
+
+        parsedSwap = {
+          amount: parsed.intent.amount,
+          fromSymbol: parsed.intent.fromSymbol,
+          toSymbol: parsed.intent.toSymbol,
+          chainKind: parsed.intent.chainKind,
+        };
       }
 
-      const chainKind = parsed.intent.chainKind ?? "evm";
+      const chainKind = parsedSwap.chainKind ?? "evm";
       const walletAddress = getPrimaryWalletAddress(wallet, chainKind);
       if (!walletAddress) {
         return [
@@ -968,39 +1001,39 @@ export default function ChatScreen() {
         ] satisfies ChatMessage[];
       }
 
-      const fromToken = resolveSwapToken(parsed.intent.fromSymbol, chainKind);
-      const toToken = resolveSwapToken(parsed.intent.toSymbol, chainKind);
+      const fromToken = resolveSwapToken(parsedSwap.fromSymbol, chainKind);
+      const toToken = resolveSwapToken(parsedSwap.toSymbol, chainKind);
       if (!fromToken || !toToken) {
         return [
           {
             id: `assistant-${seed}-swap-token-miss`,
             role: "assistant",
             title: "当前币种暂未接入",
-            content: `我已经识别到你输入的是 ${parsed.intent.fromSymbol} → ${parsed.intent.toSymbol}。当前已接入 ${chainKind === "solana" ? "SOL / USDT" : "ETH / USDT / BTC"} 的兑换链路；如果需要更多币种，还需要继续补充 OKX 代币映射。`,
+            content: `我已经识别到你输入的是 ${parsedSwap.fromSymbol} → ${parsedSwap.toSymbol}。当前已接入 ${chainKind === "solana" ? "SOL / USDT" : "ETH / USDT / BTC"} 的兑换链路；如果需要更多币种，还需要继续补充 OKX 代币映射。`,
             tone: "warning",
           },
         ] satisfies ChatMessage[];
       }
 
       const slippage = "0.5";
-      const rawAmount = toRawAmount(parsed.intent.amount, fromToken.decimals);
+      const rawAmount = toRawAmount(parsedSwap.amount, fromToken.decimals);
       const quoteResult = await previewOnchainSwap({
         chainIndex: fromToken.chainIndex,
         amount: rawAmount,
         fromTokenAddress: fromToken.address,
         toTokenAddress: toToken.address,
         userWalletAddress: walletAddress,
-        fromTokenSymbol: parsed.intent.fromSymbol,
-        toTokenSymbol: parsed.intent.toSymbol,
+        fromTokenSymbol: parsedSwap.fromSymbol,
+        toTokenSymbol: parsedSwap.toSymbol,
         chainKind,
       });
 
       const estimatedReceive = quoteResult.quote?.toAmount ?? "0";
       const estimatedPrice = formatSwapUnitPrice(
-        parsed.intent.amount,
+        parsedSwap.amount,
         estimatedReceive,
-        parsed.intent.toSymbol,
-        parsed.intent.fromSymbol,
+        parsedSwap.toSymbol,
+        parsedSwap.fromSymbol,
       );
       const routeLabel = "OKX Onchain OS 执行链路";
       const priceImpact = "0%";
@@ -1013,9 +1046,9 @@ export default function ChatScreen() {
           fromTokenAddress: fromToken.address,
           toTokenAddress: toToken.address,
           userWalletAddress: walletAddress,
-          fromTokenSymbol: parsed.intent.fromSymbol,
-          toTokenSymbol: parsed.intent.toSymbol,
-          displayAmount: parsed.intent.amount,
+          fromTokenSymbol: parsedSwap.fromSymbol,
+          toTokenSymbol: parsedSwap.toSymbol,
+          displayAmount: parsedSwap.amount,
           chainKind,
           slippagePercent: slippage,
         });
@@ -1029,9 +1062,9 @@ export default function ChatScreen() {
       });
 
       const cardPayload: SwapCardPayload = {
-        amount: parsed.intent.amount,
-        fromSymbol: parsed.intent.fromSymbol,
-        toSymbol: parsed.intent.toSymbol,
+        amount: parsedSwap.amount,
+        fromSymbol: parsedSwap.fromSymbol,
+        toSymbol: parsedSwap.toSymbol,
         chainKind,
         estimatedReceive,
         estimatedPrice,
@@ -1047,12 +1080,12 @@ export default function ChatScreen() {
                 fromTokenAddress: fromToken.address,
                 toTokenAddress: toToken.address,
                 userWalletAddress: walletAddress,
-                fromTokenSymbol: parsed.intent.fromSymbol,
-                toTokenSymbol: parsed.intent.toSymbol,
+                fromTokenSymbol: parsedSwap.fromSymbol,
+                toTokenSymbol: parsedSwap.toSymbol,
                 slippagePercent: slippage,
                 broadcastAddress: walletAddress,
                 routeLabel,
-                displayAmount: parsed.intent.amount,
+                displayAmount: parsedSwap.amount,
                 builderCode: builderCodePayload?.builderCode,
                 builderCodeInjectionMode: builderCodePayload?.injectionMode,
                 builderCodeTargetCapability: builderCodePayload?.targetCapability,
@@ -1127,11 +1160,65 @@ export default function ChatScreen() {
         const walletRaw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
           const wallet = parseWallet(walletRaw);
 
-        const transferIntent = detectTransferIntent(content);
         const seed = Date.now();
+        const triggeredIntent = detectAgentIntent(content);
+        const confirmCard = buildConfirmCard(triggeredIntent);
 
-        if (transferIntent) {
-          appendMessages(buildTransferMessages(transferIntent, wallet, seed));
+        if (triggeredIntent.kind === "transfer") {
+          appendMessages([
+            {
+              id: `assistant-${seed}-transfer-rule`,
+              role: "assistant",
+              title: confirmCard?.title ?? "转账确认",
+              content:
+                confirmCard?.description ??
+                `已识别转账请求：向 ${triggeredIntent.payload.address} 发送 ${triggeredIntent.payload.amount} ${triggeredIntent.payload.symbol}。`,
+              meta: `已命中固定转账触发规则（${triggeredIntent.source}）`,
+            },
+            ...buildTransferMessages(triggeredIntent.payload, wallet, seed),
+          ]);
+          return;
+        }
+
+        if (triggeredIntent.kind === "swap") {
+          const swapMessages = await runSwapFlow(content, wallet, seed, triggeredIntent);
+          appendMessages([
+            {
+              id: `assistant-${seed}-swap-rule`,
+              role: "assistant",
+              title: confirmCard?.title ?? "交易确认",
+              content:
+                confirmCard?.description ??
+                `已识别兑换请求：将 ${triggeredIntent.payload.amount} ${triggeredIntent.payload.fromSymbol} 兑换为 ${triggeredIntent.payload.toSymbol}。`,
+              meta: `已命中固定交易触发规则（${triggeredIntent.source}）`,
+            },
+            ...swapMessages,
+          ]);
+          return;
+        }
+
+        if (triggeredIntent.kind === "price_query") {
+          const snapshot = await getMarketSnapshotByMcp(triggeredIntent.payload.symbol);
+          appendMessages(buildPriceMessages(snapshot, seed));
+          return;
+        }
+
+        if (triggeredIntent.kind === "portfolio_query") {
+          if (!wallet) {
+            throw new Error("当前没有可用的钱包，请先完成邮箱登录并自动创建 Agent Wallet。");
+          }
+          const assets = await getAccountAssets(wallet);
+          appendMessages(buildAssetMessages(assets, seed));
+          return;
+        }
+
+        if (triggeredIntent.kind === "earn_query") {
+          const token = triggeredIntent.payload?.symbol ?? extractDeFiToken(content);
+          const products = await searchDeFiProductsByMcp(token, "ethereum", "SINGLE_EARN");
+          if (!products.length) {
+            throw new Error(`暂未检索到 ${token} 相关的可用赚币产品，请稍后再试。`);
+          }
+          appendMessages(buildDeFiMessages(token, products, seed));
           return;
         }
 
@@ -1192,6 +1279,7 @@ export default function ChatScreen() {
             response.intent.swapMessage || content,
             wallet,
             seed,
+            undefined,
           );
           appendMessages([
             {

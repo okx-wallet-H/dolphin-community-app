@@ -49,6 +49,7 @@ type ToolDefinition = {
 
 type LocalToolName =
   | "token_price_info"
+  | "token_hot_tokens"
   | "portfolio_all_balances"
   | "defi_search"
   | "smart_money_leaderboard_list"
@@ -78,6 +79,10 @@ const LOCAL_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "token_price_info",
     description: "获取代币价格、24 小时涨跌幅和成交量。",
+  },
+  {
+    name: "token_hot_tokens",
+    description: "获取指定链上的热门代币列表。",
   },
   {
     name: "portfolio_all_balances",
@@ -520,6 +525,43 @@ async function handleTokenPriceInfo(args: Record<string, unknown>) {
   };
 }
 
+async function handleTokenHotTokens(args: Record<string, unknown>) {
+  const chainIndex = resolveChainIndex(args.chainIndex ?? args.chain);
+  const sortBy = firstNonEmptyString(args.sortBy) || "5";
+  const timeFrame = firstNonEmptyString(args.timeFrame) || "4";
+
+  const raw = await callUpstreamTool("dex-okx-market-token-ranking", {
+    chains: chainIndex,
+    sortBy,
+    timeFrame,
+  });
+
+  const rows = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as Record<string, unknown>)?.data)
+      ? ((raw as Record<string, unknown>).data as unknown[])
+      : [];
+
+  return rows.map((entry) => {
+    const item = toObject(entry);
+    return {
+      symbol: firstNonEmptyString(item.tokenSymbol) || "UNKNOWN",
+      name: firstNonEmptyString(item.tokenName, item.tokenSymbol) || "Unknown Token",
+      address: firstNonEmptyString(item.tokenContractAddress) || "",
+      chain: chainIndex,
+      chainIndex: firstNonEmptyString(item.chainIndex) || chainIndex,
+      price: firstNonEmptyString(item.price) || "0",
+      change24h: firstNonEmptyString(item.change) || "0",
+      volume24h: firstNonEmptyString(item.volume) || "0",
+      marketCap: firstNonEmptyString(item.marketCap) || "0",
+      liquidity: firstNonEmptyString(item.liquidity) || "0",
+      holders: firstNonEmptyString(item.holders) || "0",
+      logoUrl: firstNonEmptyString(item.tokenLogoUrl),
+      raw: item,
+    };
+  });
+}
+
 async function handlePortfolioAllBalances(args: Record<string, unknown>) {
   const address = firstNonEmptyString(args.address, args.walletAddress, args.userWalletAddress);
   const chains = resolveChainIndices(args.chains ?? args.chainIndices ?? args.chainIndex ?? args.chain);
@@ -765,6 +807,8 @@ async function executeLocalTool(name: LocalToolName, args: Record<string, unknow
   switch (name) {
     case "token_price_info":
       return handleTokenPriceInfo(args);
+    case "token_hot_tokens":
+      return handleTokenHotTokens(args);
     case "portfolio_all_balances":
       return handlePortfolioAllBalances(args);
     case "defi_search":

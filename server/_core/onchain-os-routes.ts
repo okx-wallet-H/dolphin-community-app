@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import {
   executeOnchainSwap,
+  getOnchainApprovals,
   getOnchainAssets,
   getOnchainExecutionReceipt,
   getOnchainOsConfig,
@@ -85,6 +86,39 @@ export function registerOnchainOsRoutes(app: Express) {
       console.error("[Onchain OS] assets failed", error);
       res.status(400).json({
         error: error instanceof Error ? error.message : "Failed to query Onchain OS assets",
+      });
+    }
+  });
+
+  app.get("/api/onchain/approvals", async (req: Request, res: Response) => {
+    const user = await requireAuth(req, res);
+    if (!user) return;
+
+    const chainIndex = getQueryString(req, "chainIndex");
+    const address = getQueryString(req, "address");
+    if (!chainIndex || !address) {
+      res.status(400).json({ error: "chainIndex and address are required" });
+      return;
+    }
+
+    try {
+      const result = await getOnchainApprovals({
+        chainIndex,
+        address,
+        limit: getQueryString(req, "limit") || undefined,
+        cursor: getQueryString(req, "cursor") || undefined,
+      });
+
+      res.json({
+        user: {
+          openId: user.openId,
+        },
+        ...result,
+      });
+    } catch (error) {
+      console.error("[Onchain OS] approvals failed", error);
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Failed to query Onchain OS approvals",
       });
     }
   });

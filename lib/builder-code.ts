@@ -7,6 +7,8 @@ export const X_LAYER_CHAIN_KIND = "evm" as const satisfies DexChainKind;
 export const X_LAYER_BUILDER_CODE = (
   process.env.EXPO_PUBLIC_XLAYER_BUILDER_CODE ??
   process.env.EXPO_PUBLIC_OKX_XLAYER_BUILDER_CODE ??
+  process.env.EXPO_PUBLIC_OKX_CO ??
+  process.env.EXPO_PUBLIC_CO ??
   process.env.EXPO_PUBLIC_BUILDER_CODE ??
   ""
 ).trim();

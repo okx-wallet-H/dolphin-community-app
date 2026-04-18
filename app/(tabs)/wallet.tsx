@@ -19,7 +19,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
   getAccountAssets,
+  getOnchainApprovals,
   type AgentWalletAssetsResponse,
+  type OnchainApprovalsResponse,
   type StoredWalletSnapshot,
   type WalletAssetItem,
 } from "@/lib/_core/api";
@@ -36,6 +38,7 @@ const TEXT_SECONDARY = "#666C85";
 const ERROR = "#DC2626";
 
 type ChainCard = AgentWalletAssetsResponse["walletAddresses"][number];
+type ApprovalGroup = OnchainApprovalsResponse["approvals"][number];
 
 const AGENT_TASKS = [
   {
@@ -195,6 +198,7 @@ function AssetRow({
 export default function WalletRoute() {
   const [wallet, setWallet] = useState<StoredWalletSnapshot>(null);
   const [assets, setAssets] = useState<AgentWalletAssetsResponse | null>(null);
+  const [approvalGroups, setApprovalGroups] = useState<ApprovalGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorText, setErrorText] = useState("");
@@ -217,6 +221,19 @@ export default function WalletRoute() {
     return "当前仅展示真实链上数据；未查询到余额时会直接显示空状态。";
   }, [assets?.source, wallet?.evmAddress, wallet?.solanaAddress]);
 
+  const securitySummary = useMemo(() => {
+    const projects = approvalGroups.flatMap((group) => group.approvalProjects || []);
+    const tokenCount = projects.reduce((acc, project) => acc + project.tokens.length, 0);
+    return {
+      projectCount: projects.length,
+      tokenCount,
+      sampleProjects: projects
+        .map((project) => project.projectName || maskAddress(project.approveAddress))
+        .filter(Boolean)
+        .slice(0, 3),
+    };
+  }, [approvalGroups]);
+
   const loadAssets = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) {
@@ -234,11 +251,20 @@ export default function WalletRoute() {
       // 只展示真实钱包数据；如果当前还没有完整地址，则直接进入空状态。
       if (!parsedWallet?.evmAddress || !parsedWallet?.solanaAddress) {
         setAssets(null);
+        setApprovalGroups([]);
         return;
       }
 
-      const result = await getAccountAssets(parsedWallet);
+      const [result, approvalsResult] = await Promise.all([
+        getAccountAssets(parsedWallet),
+        getOnchainApprovals({
+          chainIndex: "1",
+          address: parsedWallet.evmAddress,
+          limit: "20",
+        }).catch(() => null),
+      ]);
       setAssets(result);
+      setApprovalGroups(approvalsResult?.approvals ?? []);
     } catch (error) {
       setAssets(null);
       setErrorText(
@@ -381,6 +407,51 @@ export default function WalletRoute() {
                 查看盯盘、调仓与余额巡检任务的当前状态。
               </Text>
             </Pressable>
+          </View>
+
+          <View style={styles.securitySection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>钱包安全</Text>
+              <Text style={styles.sectionHint}>已接入 OKX 授权查询</Text>
+            </View>
+            <View style={styles.securityCard}>
+              <View style={styles.securityHeaderRow}>
+                <View style={styles.securityIconWrap}>
+                  <MaterialCommunityIcons
+                    name="shield-check-outline"
+                    size={22}
+                    color={PRIMARY}
+                  />
+                </View>
+                <View style={styles.securityTextWrap}>
+                  <Text style={styles.securityTitle}>授权与风险暴露摘要</Text>
+                  <Text style={styles.securityDesc}>
+                    {wallet?.evmAddress
+                      ? securitySummary.projectCount > 0
+                        ? `当前在以太坊主链检测到 ${securitySummary.projectCount} 个已授权项目、${securitySummary.tokenCount} 条代币授权记录。`
+                        : "当前未检测到需要关注的已授权项目，后续可继续接撤销授权链路。"
+                      : "登录并生成 Agent Wallet 后，这里会展示真实授权与风险暴露摘要。"}
+                  </Text>
+                </View>
+              </View>
+
+              {securitySummary.sampleProjects.length ? (
+                <View style={styles.securityTagRow}>
+                  {securitySummary.sampleProjects.map((project) => (
+                    <View key={project} style={styles.securityTag}>
+                      <Text style={styles.securityTagText}>{project}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              <Pressable
+                style={styles.securityAction}
+                onPress={() => router.push("/(tabs)/chat")}
+              >
+                <Text style={styles.securityActionText}>去对话页继续处理授权与风控</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.taskSection}>
@@ -850,6 +921,75 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     marginBottom: 18,
+  },
+  securitySection: {
+    marginBottom: 18,
+  },
+  securityCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 18,
+    gap: 14,
+  },
+  securityHeaderRow: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  securityIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: PRIMARY_LIGHT,
+  },
+  securityTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  securityTitle: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "800",
+    color: TEXT_PRIMARY,
+  },
+  securityDesc: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: TEXT_SECONDARY,
+  },
+  securityTagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  securityTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: PRIMARY_LIGHT,
+  },
+  securityTagText: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+    color: PRIMARY,
+  },
+  securityAction: {
+    borderRadius: 16,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F7F3FF",
+  },
+  securityActionText: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: PRIMARY,
   },
   quickActionCard: {
     flex: 1,

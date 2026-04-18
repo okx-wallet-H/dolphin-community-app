@@ -13,6 +13,7 @@ import {
 } from '../dex/_shared';
 import {
   executeOnchainSwap,
+  getOnchainApprovals,
   getOnchainAssets,
   getOnchainExecutionReceipt,
   getOnchainOsConfig,
@@ -33,6 +34,7 @@ function resolveRoute(req: VercelRequest) {
   if (route) return route;
   if (pathname.endsWith('/onchain/config')) return 'config';
   if (pathname.endsWith('/onchain/assets')) return 'assets';
+  if (pathname.endsWith('/onchain/approvals')) return 'approvals';
   if (pathname.endsWith('/onchain/preview')) return 'preview';
   if (pathname.endsWith('/onchain/execute')) return 'execute';
   if (pathname.endsWith('/onchain/receipt')) return 'receipt';
@@ -114,6 +116,38 @@ async function handleAssets(req: VercelRequest, res: VercelResponse) {
     chains: getQueryString(req, 'chains') || undefined,
     filter: getQueryString(req, 'filter') || undefined,
     excludeRiskToken: getQueryString(req, 'excludeRiskToken') || undefined,
+  });
+
+  return sendSuccess(res, {
+    user: {
+      openId: user.openId,
+    },
+    ...result,
+  });
+}
+
+async function handleApprovals(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET') {
+    return sendMethodNotAllowed(res);
+  }
+
+  const user = requireAuth(req);
+  const chainIndex = getQueryString(req, 'chainIndex');
+  const address = getQueryString(req, 'address');
+  if (!chainIndex || !address) {
+    return res.status(400).json({
+      code: '400',
+      msg: 'chainIndex and address are required',
+      success: false,
+      error: 'chainIndex and address are required',
+    });
+  }
+
+  const result = await getOnchainApprovals({
+    chainIndex,
+    address,
+    limit: getQueryString(req, 'limit') || undefined,
+    cursor: getQueryString(req, 'cursor') || undefined,
   });
 
   return sendSuccess(res, {
@@ -362,9 +396,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     switch (route) {
       case 'config':
-        return await handleConfig(req, res);
+        await handleConfig(req, res);
+        return;
       case 'assets':
-        return await handleAssets(req, res);
+        await handleAssets(req, res);
+        return;
+      case 'approvals':
+        await handleApprovals(req, res);
+        return;
       case 'preview':
         return await handlePreview(req, res);
       case 'execute':

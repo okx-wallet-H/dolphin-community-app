@@ -409,6 +409,7 @@ export type OnchainOsConfigResponse = {
       execute: boolean;
       receipt: boolean;
       assets: boolean;
+      securityApprovals: boolean;
       simulate: boolean;
       broadcast: boolean;
     };
@@ -460,6 +461,34 @@ export type OnchainAssetsResponse = {
     chainName: string;
     address: string;
     assets: WalletAssetItem[];
+  }[];
+  updatedAt: string;
+};
+
+export type OnchainApprovalsResponse = {
+  success: true;
+  user: {
+    openId: string;
+  };
+  executionModel: 'agent_wallet';
+  source: 'okx-onchain' | 'mock';
+  mockMode: boolean;
+  approvals: {
+    chainIndex: string;
+    cursor: string;
+    approvalProjects: {
+      projectName: string;
+      projectIcon?: string;
+      approveAddress: string;
+      tokens: {
+        coinId?: string;
+        imageUrl?: string;
+        symbol: string;
+        status: string;
+        tokenAddress: string;
+        approvalNum: string;
+      }[];
+    }[];
   }[];
   updatedAt: string;
 };
@@ -1467,6 +1496,24 @@ export async function getOnchainAssets(params: {
     query.append('excludeRiskToken', params.excludeRiskToken);
   }
   return (await apiCall(`/api/onchain/assets?${query.toString()}`)) as OnchainAssetsResponse;
+}
+
+export async function getOnchainApprovals(params: {
+  chainIndex: string;
+  address: string;
+  limit?: string;
+  cursor?: string;
+}): Promise<OnchainApprovalsResponse> {
+  const query = new URLSearchParams();
+  query.append('chainIndex', params.chainIndex);
+  query.append('address', params.address);
+  if (params.limit) {
+    query.append('limit', params.limit);
+  }
+  if (params.cursor) {
+    query.append('cursor', params.cursor);
+  }
+  return (await apiCall(`/api/onchain/approvals?${query.toString()}`)) as OnchainApprovalsResponse;
 }
 
 async function getOkxPublicTickerPrice(symbol: string): Promise<{ price: number; updateTime: string } | null> {

@@ -49,6 +49,30 @@ export type OnchainAssetsResponse = {
   updatedAt: string;
 };
 
+export type OnchainApprovalsResponse = {
+  executionModel: "agent_wallet";
+  source: "okx-onchain" | "mock";
+  mockMode: boolean;
+  approvals: Array<{
+    chainIndex: string;
+    cursor: string;
+    approvalProjects: Array<{
+      projectName: string;
+      projectIcon?: string;
+      approveAddress: string;
+      tokens: Array<{
+        coinId?: string;
+        imageUrl?: string;
+        symbol: string;
+        status: string;
+        tokenAddress: string;
+        approvalNum: string;
+      }>;
+    }>;
+  }>;
+  updatedAt: string;
+};
+
 const CHAIN_INDEX_NAME_MAP: Record<string, string> = {
   "1": "Ethereum",
   "10": "Optimism",
@@ -279,6 +303,22 @@ function buildMockAssets(address: string): OnchainAssetsResponse {
   };
 }
 
+function buildMockApprovals(chainIndex: string): OnchainApprovalsResponse {
+  return {
+    executionModel: "agent_wallet",
+    source: "mock",
+    mockMode: true,
+    approvals: [
+      {
+        chainIndex,
+        cursor: "",
+        approvalProjects: [],
+      },
+    ],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 async function queryOnchainAssets(input: { address: string; chains?: string; filter?: string; excludeRiskToken?: string }) {
   const data = await callOnchainGet("/api/v6/dex/balance/all-token-balances-by-address", {
     address: input.address,
@@ -296,6 +336,57 @@ async function queryOnchainAssets(input: { address: string; chains?: string; fil
     mockMode: false,
     totalAssetValue,
     walletAddresses,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function queryOnchainApprovals(input: { chainIndex: string; address: string; limit?: string; cursor?: string }) {
+  const data = await callOnchainGet("/api/v5/wallet/security/approvals", {
+    addressList: JSON.stringify([
+      {
+        chainIndex: resolveChainIndices(input.chainIndex).split(",")[0] || input.chainIndex,
+        address: input.address,
+      },
+    ]),
+    limit: input.limit ?? "",
+    cursor: input.cursor ?? "",
+  });
+
+  const approvals = data.map((entry: unknown) => {
+    const item = toObject(entry);
+    const approvalProjects = Array.isArray(item.approvalProjects) ? item.approvalProjects : [];
+
+    return {
+      chainIndex: typeof item.chainIndex === "string" ? item.chainIndex : input.chainIndex,
+      cursor: typeof item.cursor === "string" ? item.cursor : "",
+      approvalProjects: approvalProjects.map((project) => {
+        const projectItem = toObject(project);
+        const tokens = Array.isArray(projectItem.tokens) ? projectItem.tokens : [];
+        return {
+          projectName: typeof projectItem.projectName === "string" ? projectItem.projectName : "Unknown Project",
+          projectIcon: typeof projectItem.projectIcon === "string" ? projectItem.projectIcon : undefined,
+          approveAddress: typeof projectItem.approveAddress === "string" ? projectItem.approveAddress : "",
+          tokens: tokens.map((token) => {
+            const tokenItem = toObject(token);
+            return {
+              coinId: typeof tokenItem.coinId === "string" ? tokenItem.coinId : undefined,
+              imageUrl: typeof tokenItem.imageUrl === "string" ? tokenItem.imageUrl : undefined,
+              symbol: typeof tokenItem.symbol === "string" ? tokenItem.symbol : "TOKEN",
+              status: typeof tokenItem.status === "string" ? tokenItem.status : "0",
+              tokenAddress: typeof tokenItem.tokenAddress === "string" ? tokenItem.tokenAddress : "",
+              approvalNum: typeof tokenItem.approvalNum === "string" ? tokenItem.approvalNum : "0",
+            };
+          }),
+        };
+      }),
+    };
+  });
+
+  return {
+    executionModel: "agent_wallet" as const,
+    source: "okx-onchain" as const,
+    mockMode: false,
+    approvals,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -322,6 +413,36 @@ export async function getOnchainAssets(input: { address: string; chains?: string
     chains: input.chains,
     filter: input.filter,
     excludeRiskToken: input.excludeRiskToken,
+  });
+}
+
+export async function getOnchainApprovals(input: {
+  chainIndex: string;
+  address: string;
+  limit?: string;
+  cursor?: string;
+}): Promise<OnchainApprovalsResponse> {
+  const address = input.address.trim();
+  const chainIndex = input.chainIndex.trim();
+  if (!address || !chainIndex) {
+    throw new Error("chainIndex and address are required");
+  }
+
+  const hasOpenApiCredentials = Boolean(
+    getEnv("OKX_API_KEY", "OKX_DEX_API_KEY", "OKX_ONCHAIN_API_KEY") &&
+      getEnv("OKX_API_SECRET", "OKX_SECRET_KEY", "OKX_DEX_SECRET_KEY", "OKX_ONCHAIN_SECRET_KEY") &&
+      getEnv("OKX_PASSPHRASE", "OKX_DEX_PASSPHRASE", "OKX_ONCHAIN_PASSPHRASE", "OKX_API_PASSPHRASE"),
+  );
+
+  if (!hasOpenApiCredentials) {
+    return buildMockApprovals(chainIndex);
+  }
+
+  return queryOnchainApprovals({
+    chainIndex,
+    address,
+    limit: input.limit,
+    cursor: input.cursor,
   });
 }
 
@@ -440,7 +561,15 @@ export function getOnchainOsConfig() {
       agentWalletBaseUrl: getAgentWalletBaseUrl(),
     },
     projectIdConfigured: Boolean(getEnv("OKX_PROJECT_ID", "OKX_DEX_PROJECT_ID")),
-    builderCodeConfigured: Boolean(getEnv("EXPO_PUBLIC_XLAYER_BUILDER_CODE", "EXPO_PUBLIC_OKX_XLAYER_BUILDER_CODE", "EXPO_PUBLIC_BUILDER_CODE")),
+    builderCodeConfigured: Boolean(
+      getEnv(
+        "EXPO_PUBLIC_XLAYER_BUILDER_CODE",
+        "EXPO_PUBLIC_OKX_XLAYER_BUILDER_CODE",
+        "EXPO_PUBLIC_OKX_CO",
+        "EXPO_PUBLIC_CO",
+        "EXPO_PUBLIC_BUILDER_CODE",
+      ),
+    ),
     referrerAddress: dex.referrerAddress,
     evmFeePercent: dex.evmFeePercent,
     solanaFeePercent: dex.solanaFeePercent,
@@ -451,6 +580,7 @@ export function getOnchainOsConfig() {
       execute: true,
       receipt: true,
       assets: true,
+      securityApprovals: true,
       simulate: true,
       broadcast: true,
     },
