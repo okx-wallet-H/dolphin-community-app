@@ -72,6 +72,8 @@ export default function EarnScreen() {
       setMcpProducts(combined);
       if (combined.length > 0) {
         setSelectedStrategyId(combined[0].id);
+      } else {
+        setSelectedStrategyId(null);
       }
     } catch (e) {
       console.warn('Failed to load DeFi products:', e);
@@ -85,23 +87,7 @@ export default function EarnScreen() {
   }, [loadDeFiData]);
 
   const displayStrategies = useMemo<StrategyCard[]>(() => {
-    const fallbackStrategies: StrategyCard[] = [
-      {
-        id: "demo-eth-grid",
-        title: "ETH 稳健网格策略",
-        tag: "专业演示方案",
-        risk: "低风险",
-        apr: 8.5,
-        progress: 65,
-        minAmount: "ETH 可申购",
-        lockPeriod: "申购前先确认钱包余额",
-        chain: "以太坊",
-        summary: "基于 ETH 现货网格的稳健收益策略，适合低波动市场环境，参考 APR 8.5%。",
-        actionLabel: "去确认申购",
-      },
-    ];
-
-    if (mcpProducts.length === 0) return fallbackStrategies;
+    if (mcpProducts.length === 0) return [];
 
     const maxTvl = Math.max(
       ...mcpProducts.map((item) => {
@@ -120,15 +106,15 @@ export default function EarnScreen() {
       return {
         id: p.id,
         title: `${p.name} · ${p.platform}`,
-        tag: p.apr > 10 ? "高 APR" : "稳健收益",
+        tag: p.apr > 10 ? "优选机会" : "真实产品",
         risk: p.apr > 10 ? "中等风险" : "低风险",
         apr: p.apr,
         progress: Math.max(12, Math.round((normalizedTvl / maxTvl) * 100)),
         minAmount: minAmountLabel,
         lockPeriod: "申购前先确认钱包余额",
         chain: p.chain === "ethereum" ? "以太坊" : p.chain,
-        summary: `当前产品组 ${p.productGroup}，参考 TVL ${normalizedTvl > 0 ? `$${(normalizedTvl / 1e6).toFixed(2)}M` : "--"}，点击下方按钮后会把申购意图带入 AI 对话继续确认。`,
-        actionLabel: "去确认申购",
+        summary: `当前产品组 ${p.productGroup}，参考 TVL ${normalizedTvl > 0 ? `$${(normalizedTvl / 1e6).toFixed(2)}M` : "--"}，点击后会把真实产品意图交给 Agent 承接，结果统一回到账号明细。`,
+        actionLabel: "交给 Agent 处理",
       };
     });
   }, [mcpProducts]);
@@ -185,7 +171,7 @@ export default function EarnScreen() {
             </View>
 
               <Text style={styles.pageSubtitle}>
-                赚币页现在只展示通过 OKX OnchainOS 检索到的真实 DeFi 产品；点击按钮后会把所选策略带入 AI 对话继续确认申购。
+                赚币页现在只展示通过 OKX OnchainOS 检索到的真实投资产品；若当前没有真实产品，页面将直接展示空状态，不再展示任何演示策略。
               </Text>
 
 
@@ -200,7 +186,7 @@ export default function EarnScreen() {
                 当前更适合“核心资产稳健配置 + 低波动垫层”的组合
               </Text>
               <Text style={styles.heroSummary}>
-                当前卡片全部来自真实 DeFi 搜索结果，可继续查看协议、链路、APR 与 TVL；点击按钮后会直接进入 AI 对话确认申购细节。
+                当前卡片全部来自真实 DeFi 搜索结果，可继续查看协议、链路、APR 与 TVL；执行结果统一以账号明细为主，不再展示演示型兜底内容。
               </Text>
 
               <View style={styles.heroMetricRow}>
@@ -265,8 +251,8 @@ export default function EarnScreen() {
             ) : null}
 
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>选择策略并开启自动赚币</Text>
-              <Text style={styles.sectionHint}>当前列表仅保留真实检索结果</Text>
+              <Text style={styles.sectionTitle}>真实投资产品</Text>
+              <Text style={styles.sectionHint}>仅展示当前可执行的真实检索结果</Text>
             </View>
           </View>
         }
@@ -327,7 +313,7 @@ export default function EarnScreen() {
               </View>
 
               <Text style={styles.cardFooterText}>
-                当前卡片基于真实 DeFi 搜索结果生成；点击按钮后会把所选产品、链路与 APR 一并带入 AI 对话进行申购确认。
+                当前卡片基于真实 DeFi 搜索结果生成；点击后会把所选产品、链路与 APR 一并交给 Agent 承接，结果统一进入账号明细。
               </Text>
 
               <Pressable
@@ -352,9 +338,9 @@ export default function EarnScreen() {
         ListFooterComponent={
           !loading && !displayStrategies.length ? (
             <View style={styles.emptyStateCard}>
-              <Text style={styles.emptyStateTitle}>暂无可展示的 DeFi 产品</Text>
+              <Text style={styles.emptyStateTitle}>暂无可用投资产品</Text>
               <Text style={styles.emptyStateDesc}>
-                当前没有检索到符合条件的真实赚币产品，请稍后刷新或前往对话页重新搜索。
+                当前未检索到可执行的真实投资产品，页面不会展示演示卡片或空壳策略面板。
               </Text>
             </View>
           ) : (

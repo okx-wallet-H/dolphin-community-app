@@ -370,6 +370,7 @@ async function handleReceipt(req: VercelRequest, res: VercelResponse) {
     address,
     chainIndex,
     orderId: getQueryString(req, 'orderId') || undefined,
+    txHash: getQueryString(req, 'txHash') || undefined,
     txStatus: getQueryString(req, 'txStatus') || undefined,
     cursor: getQueryString(req, 'cursor') || undefined,
     limit: getQueryString(req, 'limit') || undefined,

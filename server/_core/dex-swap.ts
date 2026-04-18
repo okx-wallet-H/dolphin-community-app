@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from "crypto";
 
 import { buildXLayerBuilderCodePayload } from "../../lib/builder-code";
+import { invokeLLM } from "./llm";
 
 const OKX_DEX_BASE_URL = "https://web3.okx.com";
 const PLATFORM_REFERRER_ADDRESS = "0x29018d7e0dd00de315dd131fbe342817674430bd";
@@ -55,6 +56,7 @@ type OrdersInput = {
   address: string;
   chainIndex: string;
   orderId?: string;
+  txHash?: string;
   txStatus?: string;
   cursor?: string;
   limit?: string;
@@ -93,7 +95,7 @@ type ExecuteResult = {
   chainKind: ChainKind;
   feePercent: string;
   referrerAddress: string;
-  status: "prepared" | "broadcasted" | "success";
+  status: "prepared" | "broadcasted" | "success" | "failed";
   requiresSignature: boolean;
   orderId: string;
   txHash: string;
@@ -153,9 +155,9 @@ function getEnv(...names: string[]) {
 
 function hasRealDexCredentials() {
   return Boolean(
-    getEnv("OKX_DEX_API_KEY", "OKX_API_KEY") &&
-      getEnv("OKX_DEX_SECRET_KEY", "OKX_SECRET_KEY") &&
-      getEnv("OKX_DEX_PASSPHRASE", "OKX_PASSPHRASE"),
+    getEnv("OKX_DEX_API_KEY", "OKX_API_KEY", "OKX_ONCHAIN_API_KEY") &&
+      getEnv("OKX_API_SECRET", "OKX_DEX_SECRET_KEY", "OKX_SECRET_KEY", "OKX_ONCHAIN_SECRET_KEY") &&
+      getEnv("OKX_API_PASSPHRASE", "OKX_DEX_PASSPHRASE", "OKX_PASSPHRASE", "OKX_ONCHAIN_PASSPHRASE"),
   );
 }
 
@@ -330,9 +332,9 @@ function buildQuery(params: Record<string, string | undefined>) {
 }
 
 function buildOkxHeaders(method: "GET" | "POST", requestPath: string, body = "") {
-  const apiKey = getEnv("OKX_DEX_API_KEY", "OKX_API_KEY");
-  const secretKey = getEnv("OKX_DEX_SECRET_KEY", "OKX_SECRET_KEY");
-  const passphrase = getEnv("OKX_DEX_PASSPHRASE", "OKX_PASSPHRASE");
+  const apiKey = getEnv("OKX_DEX_API_KEY", "OKX_API_KEY", "OKX_ONCHAIN_API_KEY");
+  const secretKey = getEnv("OKX_API_SECRET", "OKX_DEX_SECRET_KEY", "OKX_SECRET_KEY", "OKX_ONCHAIN_SECRET_KEY");
+  const passphrase = getEnv("OKX_API_PASSPHRASE", "OKX_DEX_PASSPHRASE", "OKX_PASSPHRASE", "OKX_ONCHAIN_PASSPHRASE");
   const projectId = getEnv("OKX_DEX_PROJECT_ID", "OKX_PROJECT_ID");
   const timestamp = new Date().toISOString();
   const prehash = `${timestamp}${method}${requestPath}${body}`;
@@ -427,6 +429,42 @@ function getFirstDataItem(payload: unknown) {
     return data[0] ?? null;
   }
   return data ?? null;
+}
+
+function normalizeReceiptStatus(value: string | undefined) {
+  const normalized = normalizeAmount(value).toLowerCase();
+  if (normalized === "success" || normalized === "failure" || normalized === "pending") {
+    return normalized as "pending" | "success" | "failure";
+  }
+  if (normalized === "2") {
+    return "success" as const;
+  }
+  if (normalized === "4" || normalized === "5") {
+    return "failure" as const;
+  }
+  return "pending" as const;
+}
+
+function buildNormalizedReceiptRecord(
+  record: Record<string, unknown>,
+  fallback: { address?: string; chainIndex: string; orderId?: string; txHash?: string },
+) {
+  const txHash = extractFirstString(record, ["txHash"]) || fallback.txHash || "";
+  const orderId = extractFirstString(record, ["orderId"]) || fallback.orderId || "";
+  const status = normalizeReceiptStatus(extractFirstString(record, ["status", "txStatus", "txstatus"]));
+  const txStatus =
+    extractFirstString(record, ["txStatus", "txstatus"]) ||
+    (status === "success" ? "2" : status === "failure" ? "4" : "1");
+
+  return {
+    ...record,
+    address: extractFirstString(record, ["address"]) || fallback.address || "",
+    chainIndex: extractFirstString(record, ["chainIndex"]) || fallback.chainIndex,
+    orderId,
+    txHash,
+    status,
+    txStatus,
+  };
 }
 
 function buildMockQuote(input: QuoteInput): QuoteResult {
@@ -539,44 +577,26 @@ function buildMockExecute(input: ExecuteInput): ExecuteResult {
   };
 }
 
-async function callOpenAiIntentParser(message: string): Promise<IntentResult> {
-  const apiKey = getEnv("OPENAI_API_KEY");
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
-  }
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "你是加密货币兑换意图解析器。只返回 JSON。字段必须包含 action, amount, fromSymbol, toSymbol, chainKind, confidence。action 只能是 swap 或 unknown。chainKind 只能是 evm、solana 或 null。amount 必须为字符串。confidence 为 0 到 1。",
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
-    }),
+async function callPrimaryLlmIntentParser(message: string): Promise<IntentResult> {
+  const payload = await invokeLLM({
+    temperature: 0,
+    responseFormat: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "你是海豚社区的加密货币兑换意图解析器。只返回 JSON。字段必须包含 action, amount, fromSymbol, toSymbol, chainKind, confidence。action 只能是 swap 或 unknown。chainKind 只能是 evm、solana 或 null。amount 必须为字符串。confidence 为 0 到 1。不要返回 Markdown。",
+      },
+      {
+        role: "user",
+        content: message,
+      },
+    ],
   });
 
-  const payload = (await safeJson(response)) as Record<string, unknown>;
-  if (!response.ok) {
-    throw new Error(String(payload.error ?? payload.message ?? "OpenAI request failed"));
-  }
-
-  const content = extractFirstString(payload, ["choices.0.message.content"]);
+  const content = extractFirstString(payload as Record<string, unknown>, ["choices.0.message.content"]);
   if (!content) {
-    throw new Error("OpenAI intent parser returned empty content");
+    throw new Error("Primary LLM intent parser returned empty content");
   }
 
   const parsed = JSON.parse(content) as Partial<IntentResult>;
@@ -640,7 +660,7 @@ export async function parseSwapIntent(message: string) {
   }
 
   try {
-    return await callOpenAiIntentParser(normalized);
+    return await callPrimaryLlmIntentParser(normalized);
   } catch (error) {
     console.warn("[DEX Swap] parseSwapIntent fallback to regex:", error);
     return parseIntentByRegex(normalized);
@@ -867,19 +887,59 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
     const orderId = extractFirstString(broadcastData, ["orderId"]);
     const txHash = extractFirstString(broadcastData, ["txHash"]);
 
-    const ordersResponse = await okxRequest<unknown[]>("GET", "/api/v6/dex/post-transaction/orders", {
-      query: {
-        address: broadcastAddress,
-        chainIndex: normalizedInput.chainIndex,
-        orderId,
-      },
-    });
+    let receiptResponse: unknown = null;
+    let order: Record<string, unknown> | null = null;
 
-    const ordersData = (getFirstDataItem(ordersResponse) ?? {}) as Record<string, unknown>;
-    const order = Array.isArray(ordersData.orders)
-      ? ((ordersData.orders[0] ?? null) as Record<string, unknown> | null)
-      : null;
-    const txStatus = extractFirstString(order, ["txStatus", "txstatus"]);
+    if (txHash) {
+      try {
+        const historyResponse = await okxRequest<unknown[]>("GET", "/api/v6/dex/aggregator/history", {
+          query: {
+            chainIndex: normalizedInput.chainIndex,
+            txHash,
+          },
+        });
+        const historyItem = getFirstDataItem(historyResponse);
+        if (historyItem && typeof historyItem === "object" && !Array.isArray(historyItem)) {
+          order = buildNormalizedReceiptRecord(historyItem as Record<string, unknown>, {
+            address: broadcastAddress,
+            chainIndex: normalizedInput.chainIndex,
+            orderId,
+            txHash,
+          });
+        }
+        receiptResponse = historyResponse;
+      } catch (historyError) {
+        console.warn("[DEX Swap] executeDexSwap history lookup failed, fallback to legacy orders:", historyError);
+      }
+    }
+
+    if (!order && orderId) {
+      const ordersResponse = await okxRequest<unknown[]>("GET", "/api/v6/dex/post-transaction/orders", {
+        query: {
+          address: broadcastAddress,
+          chainIndex: normalizedInput.chainIndex,
+          orderId,
+        },
+      });
+
+      const ordersData = (getFirstDataItem(ordersResponse) ?? {}) as Record<string, unknown>;
+      const legacyOrder = Array.isArray(ordersData.orders)
+        ? ((ordersData.orders[0] ?? null) as Record<string, unknown> | null)
+        : null;
+      order = legacyOrder
+        ? buildNormalizedReceiptRecord(legacyOrder, {
+            address: broadcastAddress,
+            chainIndex: normalizedInput.chainIndex,
+            orderId,
+            txHash,
+          })
+        : null;
+      receiptResponse = receiptResponse ?? ordersResponse;
+    }
+
+    const receiptStatus = normalizeReceiptStatus(extractFirstString(order, ["status", "txStatus", "txstatus"]));
+    const isSuccess = receiptStatus === "success";
+    const isFailure = receiptStatus === "failure";
 
     return {
       success: true,
@@ -888,14 +948,14 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
       chainKind,
       feePercent,
       referrerAddress: PLATFORM_REFERRER_ADDRESS,
-      status: txStatus === "2" ? "success" : "broadcasted",
+      status: isSuccess ? "success" : isFailure ? "failed" : "broadcasted",
       requiresSignature: false,
       orderId,
       txHash: txHash || extractFirstString(order, ["txHash"]),
       progress: [
         { key: "swap", label: "已构建兑换交易", status: "done" },
         { key: "broadcast", label: "已广播交易", status: "done" },
-        { key: "orders", label: txStatus === "2" ? "交易执行成功" : "交易处理中", status: txStatus === "2" ? "done" : "pending" },
+        { key: "orders", label: isSuccess ? "交易执行成功" : isFailure ? "交易执行失败" : "交易处理中", status: isSuccess || isFailure ? "done" : "pending" },
       ],
       builderCodeContext: appliedBuilderCodeContext,
       swapTransaction: swapData,
@@ -903,7 +963,7 @@ export async function executeDexSwap(input: ExecuteInput): Promise<ExecuteResult
       raw: {
         swap: swapResponse,
         broadcast: broadcastResponse,
-        orders: ordersResponse,
+        orders: receiptResponse,
       },
     };
   } catch (error) {
@@ -921,6 +981,7 @@ export async function getDexSwapOrders(input: OrdersInput) {
     address: normalizeAddress(input.address),
     chainIndex: normalizeAmount(input.chainIndex),
     orderId: normalizeAmount(input.orderId),
+    txHash: normalizeAmount(input.txHash),
     txStatus: normalizeAmount(input.txStatus),
     cursor: normalizeAmount(input.cursor),
     limit: normalizeAmount(input.limit),
@@ -940,9 +1001,10 @@ export async function getDexSwapOrders(input: OrdersInput) {
           orderId: normalizedInput.orderId || `mock_${randomBytes(8).toString("hex")}`,
           address: normalizedInput.address,
           chainIndex: normalizedInput.chainIndex,
-          txHash: normalizedInput.address.startsWith("0x")
+          txHash: normalizedInput.txHash || (normalizedInput.address.startsWith("0x")
             ? `0x${randomBytes(32).toString("hex")}`
-            : `SoMock${randomBytes(12).toString("hex")}`,
+            : `SoMock${randomBytes(12).toString("hex")}`),
+          status: "success",
           txStatus: "2",
           failReason: "",
         },
@@ -951,6 +1013,37 @@ export async function getDexSwapOrders(input: OrdersInput) {
   }
 
   try {
+    if (normalizedInput.txHash) {
+      const historyResponse = await okxRequest<unknown[]>("GET", "/api/v6/dex/aggregator/history", {
+        query: {
+          chainIndex: normalizedInput.chainIndex,
+          txHash: normalizedInput.txHash,
+        },
+      });
+
+      const historyItems = Array.isArray((historyResponse as Record<string, unknown>).data)
+        ? (((historyResponse as Record<string, unknown>).data ?? []) as unknown[])
+        : [];
+      const data = historyItems
+        .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+        .map((item) =>
+          buildNormalizedReceiptRecord(item, {
+            address: normalizedInput.address,
+            chainIndex: normalizedInput.chainIndex,
+            orderId: normalizedInput.orderId,
+            txHash: normalizedInput.txHash,
+          })
+        );
+
+      return {
+        success: true,
+        providerMode: "okx" as const,
+        mockMode: false,
+        data,
+        raw: historyResponse,
+      };
+    }
+
     const response = await okxRequest<unknown[]>("GET", "/api/v6/dex/post-transaction/orders", {
       query: {
         address: normalizedInput.address,
@@ -963,7 +1056,18 @@ export async function getDexSwapOrders(input: OrdersInput) {
     });
 
     const first = (getFirstDataItem(response) ?? {}) as Record<string, unknown>;
-    const orders = Array.isArray(first.orders) ? first.orders : [];
+    const orders = Array.isArray(first.orders)
+      ? first.orders
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+          .map((item) =>
+            buildNormalizedReceiptRecord(item, {
+              address: normalizedInput.address,
+              chainIndex: normalizedInput.chainIndex,
+              orderId: normalizedInput.orderId,
+              txHash: normalizedInput.txHash,
+            })
+          )
+      : [];
 
     return {
       success: true,
@@ -987,9 +1091,10 @@ export async function getDexSwapOrders(input: OrdersInput) {
           orderId: normalizedInput.orderId || `mock_${randomBytes(8).toString("hex")}`,
           address: normalizedInput.address,
           chainIndex: normalizedInput.chainIndex,
-          txHash: normalizedInput.address.startsWith("0x")
+          txHash: normalizedInput.txHash || (normalizedInput.address.startsWith("0x")
             ? `0x${randomBytes(32).toString("hex")}`
-            : `SoMock${randomBytes(12).toString("hex")}`,
+            : `SoMock${randomBytes(12).toString("hex")}`),
+          status: "success",
           txStatus: "2",
           failReason: "",
         },

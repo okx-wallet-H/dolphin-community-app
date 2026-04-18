@@ -232,7 +232,7 @@ export type ChatAiIntentResponse =
         priceText: string;
         assetSummary: string;
         swapMessage: string;
-        source: 'openai' | 'fallback';
+        source: 'llm' | 'fallback';
         mockMode: boolean;
       };
       earnPlan?: {
@@ -343,7 +343,7 @@ export type DexExecuteResponse = {
   chainKind: DexChainKind;
   feePercent: string;
   referrerAddress: string;
-  status: 'prepared' | 'broadcasted' | 'success';
+  status: 'prepared' | 'broadcasted' | 'success' | 'failed';
   requiresSignature: boolean;
   orderId: string;
   txHash: string;
@@ -1950,12 +1950,15 @@ export async function executeOnchainSwap(payload: DexExecutePayload): Promise<On
   })) as OnchainExecuteResponse;
 }
 
-export async function getDexSwapOrders(params: { address: string; chainIndex: string; orderId?: string; limit?: string }): Promise<DexOrdersResponse> {
+export async function getDexSwapOrders(params: { address: string; chainIndex: string; orderId?: string; txHash?: string; limit?: string }): Promise<DexOrdersResponse> {
   const query = new URLSearchParams();
   query.append("address", params.address);
   query.append("chainIndex", params.chainIndex);
   if (params.orderId) {
     query.append("orderId", params.orderId);
+  }
+  if (params.txHash) {
+    query.append("txHash", params.txHash);
   }
   if (params.limit) {
     query.append("limit", params.limit);
@@ -1967,6 +1970,7 @@ export async function getOnchainExecutionReceipt(params: {
   address: string;
   chainIndex: string;
   orderId?: string;
+  txHash?: string;
   txStatus?: string;
   limit?: string;
 }): Promise<OnchainExecutionReceiptResponse> {
@@ -1975,6 +1979,9 @@ export async function getOnchainExecutionReceipt(params: {
   query.append('chainIndex', params.chainIndex);
   if (params.orderId) {
     query.append('orderId', params.orderId);
+  }
+  if (params.txHash) {
+    query.append('txHash', params.txHash);
   }
   if (params.txStatus) {
     query.append('txStatus', params.txStatus);

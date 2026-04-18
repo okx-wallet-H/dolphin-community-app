@@ -1,7 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import { authenticateRequest, setCors, toErrorMessage } from '../_standalone-auth';
-import { sendServerlessUnavailable } from '../_serverless-fallback';
+import { authenticateRequest, setCors, toErrorMessage, toSuccessEnvelope } from '../_standalone-auth';
+import { getChatAiIntent } from '../../server/_core/chat-ai';
+
+type WalletSnapshot = {
+  email?: string;
+  evmAddress?: string;
+  solanaAddress?: string;
+};
 
 function parseBody(req: VercelRequest) {
   if (!req.body) return {} as Record<string, unknown>;
@@ -13,6 +19,27 @@ function parseBody(req: VercelRequest) {
     }
   }
   return req.body as Record<string, unknown>;
+}
+
+function parseWallet(value: unknown): WalletSnapshot | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const payload = value as Record<string, unknown>;
+  const email = typeof payload.email === 'string' ? payload.email.trim() : '';
+  const evmAddress = typeof payload.evmAddress === 'string' ? payload.evmAddress.trim() : '';
+  const solanaAddress = typeof payload.solanaAddress === 'string' ? payload.solanaAddress.trim() : '';
+
+  if (!email && !evmAddress && !solanaAddress) {
+    return undefined;
+  }
+
+  return {
+    email: email || undefined,
+    evmAddress: evmAddress || undefined,
+    solanaAddress: solanaAddress || undefined,
+  };
 }
 
 function resolveRoute(req: VercelRequest) {
@@ -45,19 +72,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    authenticateRequest(req);
+    const { user } = authenticateRequest(req);
     const body = parseBody(req);
     const message = typeof body.message === 'string' ? body.message.trim() : '';
+    const wallet = parseWallet(body.wallet);
 
     if (!message) {
       return res.status(400).json({ code: '400', msg: 'message is required', success: false, error: 'MESSAGE_REQUIRED' });
     }
 
-    return sendServerlessUnavailable(res, {
-      route: route === 'chat-ai-intent' ? '/api/chat-ai/intent' : '/api/chat/intent',
-      feature: 'chat intent analysis',
-      requiredEnv: ['OPENAI_API_KEY'],
-    });
+    const intent = await getChatAiIntent(message, wallet);
+    return res.status(200).json(
+      toSuccessEnvelope({
+        user: { openId: user.openId },
+        mockMode: intent.mockMode,
+        intent,
+      }),
+    );
   } catch (error) {
     const message = toErrorMessage(error);
     const status = /UNAUTHORIZED|TOKEN/i.test(message) ? 401 : 400;

@@ -472,6 +472,7 @@ type ReceiptInput = {
   address: string;
   chainIndex: string;
   orderId?: string;
+  txHash?: string;
   txStatus?: string;
   cursor?: string;
   limit?: string;
@@ -508,22 +509,26 @@ function mapProgress(
   }));
 }
 
-function resolvePhase(input: { status: "prepared" | "broadcasted" | "success"; requiresSignature: boolean }): OnchainExecutionPhase {
+function resolvePhase(input: { status: "prepared" | "broadcasted" | "success" | "failed"; requiresSignature: boolean }): OnchainExecutionPhase {
   if (input.requiresSignature || input.status === "prepared") {
     return "awaiting_confirmation";
   }
   if (input.status === "success") {
     return "success";
   }
+  if (input.status === "failed") {
+    return "failed";
+  }
   return "executing";
 }
 
 function resolveReceiptPhase(result: Awaited<ReturnType<typeof getDexSwapOrders>>): Extract<OnchainExecutionPhase, "executing" | "success" | "failed"> {
-  const firstOrder = result.data?.[0] as { txStatus?: string } | undefined;
-  if (firstOrder?.txStatus === "2") {
+  const firstOrder = result.data?.[0] as { txStatus?: string; status?: string } | undefined;
+  const status = typeof firstOrder?.status === "string" ? firstOrder.status.trim().toLowerCase() : "";
+  if (status === "success" || firstOrder?.txStatus === "2") {
     return "success";
   }
-  if (firstOrder?.txStatus === "4" || firstOrder?.txStatus === "5") {
+  if (status === "failure" || firstOrder?.txStatus === "4" || firstOrder?.txStatus === "5") {
     return "failed";
   }
   return "executing";
@@ -534,7 +539,7 @@ function sleep(ms: number) {
 }
 
 function shouldPollReceipt(input: ReceiptInput) {
-  return Boolean(input.orderId || input.txStatus);
+  return Boolean(input.txHash || input.orderId || input.txStatus);
 }
 
 export function getOnchainOsConfig() {

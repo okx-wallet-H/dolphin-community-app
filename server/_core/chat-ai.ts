@@ -1,4 +1,5 @@
 import { createHmac } from 'crypto';
+import { invokeLLM } from './llm';
 import { callMcpTool } from './okx-mcp-service';
 
 type ChatIntentAction = 'market' | 'asset' | 'swap' | 'earn' | 'profit' | 'deposit' | 'general';
@@ -45,7 +46,7 @@ type ChatAiIntent = {
   priceText: string;
   assetSummary: string;
   swapMessage: string;
-  source: 'openai' | 'fallback';
+  source: 'llm' | 'fallback';
   mockMode: boolean;
 };
 
@@ -463,7 +464,6 @@ type MarketReply = {
   mockMode: boolean;
 };
 
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const OKX_BASE_URL = 'https://web3.okx.com';
 const OKX_CURRENT_PRICE_PATH = '/api/v5/wallet/token/real-time-price';
 const OKX_PUBLIC_TICKER_URL = 'https://www.okx.com/api/v5/market/ticker';
@@ -805,7 +805,7 @@ async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | nu
       assetSummary: '',
       swapMessage: normalized,
       source: 'fallback',
-      mockMode: true,
+      mockMode: !isRealOkxConfigured(),
     };
   }
 
@@ -864,12 +864,7 @@ async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | nu
   };
 }
 
-async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | null): Promise<ChatAiIntent> {
-  const apiKey = getEnv('OPENAI_API_KEY');
-  if (!apiKey) {
-    throw new Error('OPENAI_API_KEY is not configured');
-  }
-
+async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot | null): Promise<ChatAiIntent> {
   const walletHint = wallet
     ? JSON.stringify({
         hasEvmWallet: Boolean(wallet.evmAddress),
@@ -877,36 +872,23 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       })
     : '{"hasEvmWallet":false,"hasSolanaWallet":false}';
 
-  const response = await fetch(OPENAI_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4.1-mini',
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-            '你是 H Wallet 的 AI 驱动智能钱包助手。你需要识别用户消息属于 market、asset、swap、earn、profit、deposit、general 哪一种意图，并只返回 JSON。JSON 字段必须包含 action, confidence, reply, priceSymbol, priceText, assetSummary, swapMessage。若是查行情，只需识别 symbol 并给出简短自然语言答复草稿，最终实时价格会由系统补齐；若是查资产，reply 与 assetSummary 给出资产总结；若是 swap，reply 简短说明将进入兑换流程，swapMessage 返回原始兑换描述；若是 earn、profit、deposit，只需给出简短草稿回复，具体卡片数据由系统补齐；若是 general，reply 给出友好回答。不要返回 Markdown。',
-        },
-        {
-          role: 'user',
-          content: `wallet=${walletHint}\nmessage=${message}`,
-        },
-      ],
-    }),
+  const payload = await invokeLLM({
+    temperature: 0.2,
+    responseFormat: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content:
+          '你是海豚社区的 AI 驱动钱包助手。你需要识别用户消息属于 market、asset、swap、earn、profit、deposit、general 哪一种意图，并只返回 JSON。JSON 字段必须包含 action, confidence, reply, priceSymbol, priceText, assetSummary, swapMessage。若是查行情，只需识别 symbol 并给出简短自然语言答复草稿，最终实时价格会由系统补齐；若是查资产，reply 与 assetSummary 给出资产总结；若是 swap，reply 简短说明将进入兑换流程，swapMessage 返回原始兑换描述；若是 earn、profit、deposit，只需给出简短草稿回复，具体卡片数据由系统补齐；若是 general，reply 给出友好回答。不要返回 Markdown。',
+      },
+      {
+        role: 'user',
+        content: `wallet=${walletHint}\nmessage=${message}`,
+      },
+    ],
   });
 
-  const payload = (await response.json()) as Record<string, unknown>;
-  if (!response.ok) {
-    throw new Error(String((payload as Record<string, unknown>).error ?? (payload as Record<string, unknown>).message ?? 'OpenAI request failed'));
-  }
-
-  const content = extractJsonContent(payload);
+  const content = extractJsonContent(payload as unknown as Record<string, unknown>);
   if (!content) {
     throw new Error('Chat AI returned empty content');
   }
@@ -929,7 +911,7 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       priceText: market.priceText,
       assetSummary: '',
       swapMessage: '',
-      source: 'openai',
+      source: 'llm',
       mockMode: market.mockMode,
     };
   }
@@ -944,7 +926,7 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       priceText: '',
       assetSummary: assetSummary || buildAssetSummary(wallet),
       swapMessage: '',
-      source: 'openai',
+      source: 'llm',
       mockMode: true,
     };
   }
@@ -958,8 +940,8 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       priceText: '',
       assetSummary: '',
       swapMessage,
-      source: 'openai',
-      mockMode: true,
+      source: 'llm',
+      mockMode: !isRealOkxConfigured(),
     };
   }
 
@@ -972,7 +954,7 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       priceText: '',
       assetSummary: '',
       swapMessage: '',
-      source: 'openai',
+      source: 'llm',
       mockMode: false,
     };
   }
@@ -986,7 +968,7 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       priceText: '',
       assetSummary: '',
       swapMessage: '',
-      source: 'openai',
+      source: 'llm',
       mockMode: false,
     };
   }
@@ -1000,7 +982,7 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
       priceText: '',
       assetSummary: '',
       swapMessage: '',
-      source: 'openai',
+      source: 'llm',
       mockMode: false,
     };
   }
@@ -1013,7 +995,7 @@ async function callOpenAiChatIntent(message: string, wallet?: WalletSnapshot | n
     priceText: '',
     assetSummary: '',
     swapMessage: '',
-    source: 'openai',
+    source: 'llm',
     mockMode: true,
   };
 }
@@ -1037,7 +1019,7 @@ export async function getChatAiIntent(message: string, wallet?: WalletSnapshot |
   }
 
   try {
-    const intent = await callOpenAiChatIntent(normalized, wallet);
+    const intent = await callPrimaryLlmChatIntent(normalized, wallet);
     return buildChatResult(intent);
   } catch (error) {
     console.warn('[Chat AI] fallback intent parser:', error);

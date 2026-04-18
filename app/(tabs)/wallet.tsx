@@ -150,9 +150,11 @@ function formatUpdatedAt(value?: string) {
 function AssetRow({
   asset,
   isLast,
+  onPress,
 }: {
   asset: WalletAssetItem;
   isLast: boolean;
+  onPress?: () => void;
 }) {
   const balance = formatAmount(toNumber(asset.balance));
   const valueUsd = formatFiat(toNumber(asset.valueUsd), 2);
@@ -161,7 +163,15 @@ function AssetRow({
   const updatedLabel = formatUpdatedAt(asset.priceUpdatedAt);
 
   return (
-    <View style={[styles.assetRow, !isLast && styles.assetRowBorder]}>
+    <Pressable
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.assetRow,
+        !isLast && styles.assetRowBorder,
+        pressed && styles.assetRowPressed,
+      ]}
+    >
       <View style={styles.assetMain}>
         <View style={styles.assetBadge}>
           {asset.logoUrl ? (
@@ -191,7 +201,13 @@ function AssetRow({
         </Text>
         <Text style={styles.assetUnitPrice}>≈ ${tokenPrice}</Text>
       </View>
-    </View>
+      <MaterialIcons
+        name="arrow-forward-ios"
+        size={16}
+        color="#A78BFA"
+        style={styles.assetRowChevron}
+      />
+    </Pressable>
   );
 }
 
@@ -559,6 +575,23 @@ export default function WalletRoute() {
                           key={`${chain.chainName}-${asset.symbol}-${asset.tokenAddress || "native"}`}
                           asset={asset}
                           isLast={index === chain.assets.length - 1}
+                          onPress={() =>
+                            router.push({
+                              pathname: "/token-detail/[symbol]" as never,
+                              params: {
+                                symbol: asset.symbol,
+                                tokenName: asset.tokenName || asset.symbol,
+                                chainName: asset.chainName || chain.chainName,
+                                chainIndex: asset.chainIndex,
+                                tokenAddress: asset.tokenAddress || "",
+                                walletAddress: chain.address,
+                                balance: asset.balance,
+                                valueUsd: asset.valueUsd,
+                                tokenPrice: asset.tokenPrice,
+                                logoUrl: asset.logoUrl || "",
+                              } as never,
+                            })
+                          }
                         />
                       ))
                     ) : (
@@ -854,6 +887,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#EEF0F6",
   },
+  assetRowPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.995 }],
+  },
   assetMain: {
     flexDirection: "row",
     alignItems: "center",
@@ -916,6 +953,9 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     color: "#8B5CF6",
     marginTop: 4,
+  },
+  assetRowChevron: {
+    marginLeft: 10,
   },
   quickActionGrid: {
     flexDirection: "row",

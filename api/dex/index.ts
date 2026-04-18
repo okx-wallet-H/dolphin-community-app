@@ -21,14 +21,17 @@ function sendNotFound(res: VercelResponse) {
 }
 
 function getDexConfigSnapshot() {
-  const provider = process.env.OKX_DEX_API_KEY ? 'okx' : 'mock';
+  const hasApiKey = Boolean(process.env.OKX_DEX_API_KEY || process.env.OKX_API_KEY || process.env.OKX_ONCHAIN_API_KEY);
+  const hasSecretKey = Boolean(process.env.OKX_DEX_SECRET_KEY || process.env.OKX_API_SECRET || process.env.OKX_SECRET_KEY || process.env.OKX_ONCHAIN_SECRET_KEY);
+  const hasPassphrase = Boolean(process.env.OKX_DEX_PASSPHRASE || process.env.OKX_API_PASSPHRASE || process.env.OKX_PASSPHRASE || process.env.OKX_ONCHAIN_PASSPHRASE);
+  const provider = hasApiKey && hasSecretKey && hasPassphrase ? 'okx' : 'mock';
   return {
     provider,
     mode: 'standalone-serverless',
     okxBaseUrl: process.env.OKX_BASE_URL ?? process.env.OKX_AGENT_WALLET_BASE_URL ?? 'https://www.okx.com',
-    hasApiKey: Boolean(process.env.OKX_DEX_API_KEY || process.env.OKX_API_KEY),
-    hasSecretKey: Boolean(process.env.OKX_DEX_SECRET_KEY || process.env.OKX_API_SECRET || process.env.OKX_SECRET_KEY),
-    hasPassphrase: Boolean(process.env.OKX_DEX_PASSPHRASE || process.env.OKX_API_PASSPHRASE || process.env.OKX_PASSPHRASE),
+    hasApiKey,
+    hasSecretKey,
+    hasPassphrase,
     hasProjectId: Boolean(process.env.OKX_DEX_PROJECT_ID || process.env.OKX_PROJECT_ID),
   };
 }

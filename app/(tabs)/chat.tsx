@@ -17,6 +17,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
 import { TopTabs } from "@/components/TopTabs";
+import { ManusColors, ManusEmphasisShadow, ManusRadius, ManusShadow, ManusSpacing, ManusTypography } from "@/constants/manus-ui";
 import { buildXLayerBuilderCodePayload } from "@/lib/builder-code";
 import {
   buildConfirmCard,
@@ -1452,7 +1453,7 @@ export default function ChatScreen() {
         ]);
 
         const canPollOrder =
-          executeResult.phase === "executing" && Boolean(executeResult.orderId && pending.swap?.chainIndex);
+          executeResult.phase === "executing" && Boolean((executeResult.txHash || executeResult.orderId) && pending.swap?.chainIndex);
 
         if (canPollOrder) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -1460,6 +1461,7 @@ export default function ChatScreen() {
             address: pending.swap.broadcastAddress || pending.swap.userWalletAddress,
             chainIndex: pending.swap.chainIndex,
             orderId: executeResult.orderId,
+            txHash: executeResult.txHash || undefined,
             limit: "1",
           });
 
@@ -1467,21 +1469,31 @@ export default function ChatScreen() {
 
           const order = (ordersResult.data?.[0] ?? null) as Record<string, unknown> | null;
           const txStatus = typeof order?.txStatus === "string" ? order.txStatus : typeof order?.txstatus === "string" ? order.txstatus : "";
+          const receiptStatus = typeof order?.status === "string"
+            ? order.status.toLowerCase()
+            : txStatus === "2"
+              ? "success"
+              : txStatus === "4" || txStatus === "5"
+                ? "failure"
+                : "pending";
           const polledTxHash = typeof order?.txHash === "string" ? order.txHash : executeResult.txHash;
-          const isSettled = txStatus === "2";
+          const isSettled = receiptStatus === "success";
+          const isFailed = receiptStatus === "failure";
 
           appendMessages([
             {
               id: `assistant-signature-${resumeKey}-poll-result`,
               role: "assistant",
-              title: isSettled ? "订单状态已更新" : "订单仍在处理中",
+              title: isSettled ? "订单状态已更新" : isFailed ? "订单执行失败" : "订单仍在处理中",
               content: isSettled
                 ? `我已经查到这笔兑换的最新订单状态，当前已进入完成回执阶段，订单号 ${executeResult.orderId}。`
-                : `我已经重新查询这笔兑换的订单状态，当前仍在链上处理中，订单号 ${executeResult.orderId}。`,
+                : isFailed
+                  ? `我已经查到这笔兑换的最新回执，当前执行失败，订单号 ${executeResult.orderId || "待补充"}。`
+                  : `我已经重新查询这笔兑换的订单状态，当前仍在链上处理中，订单号 ${executeResult.orderId || "待补充"}。`,
               meta: polledTxHash
                 ? `链上回执：${polledTxHash}`
                 : "当前订单查询已完成，但暂未返回新的链上回执。",
-              tone: isSettled ? "success" : "default",
+              tone: isSettled ? "success" : isFailed ? "danger" : "default",
             },
           ]);
 
@@ -1913,23 +1925,32 @@ export default function ChatScreen() {
 
                 {item.card?.kind === "swap" ? (() => {
                   const swapCard = item.card.payload;
+                  const statusLabel = swapCard.phase === "awaiting_confirmation"
+                    ? "待 Agent Wallet 执行"
+                    : swapCard.phase === "executing"
+                      ? "执行中"
+                      : swapCard.phase === "success"
+                        ? "已写入账号明细"
+                        : swapCard.phase === "failed"
+                          ? "执行失败"
+                          : "意图已整理";
                   return (
                     <LinearGradient
-                      colors={["#FFFFFF", "#F7F3FF", "#EFEAFF"]}
+                      colors={["#FFFFFF", "#F8F6FF", "#EEE9FF"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
                     >
                       <View style={styles.cardHeaderRow}>
                         <View style={styles.cardIconWrap}>
-                          <MaterialCommunityIcons name="swap-horizontal-bold" size={20} color="#FFFFFF" />
+                          <MaterialCommunityIcons name="swap-horizontal-bold" size={20} color={ManusColors.primary} />
                         </View>
                         <View style={styles.cardHeaderTextWrap}>
-                          <Text style={styles.cardEyebrow}>OKX Swap 报价</Text>
+                          <Text style={styles.cardEyebrow}>Agent 已接管兑换意图</Text>
                           <Text style={styles.cardTitle}>{swapCard.fromSymbol} → {swapCard.toSymbol}</Text>
                         </View>
                         <View style={styles.badgeWrap}>
-                          <Text style={[styles.badgeText, { color: "#BFDBFE" }]}>
+                          <Text style={[styles.badgeText, { color: ManusColors.primary }]}>
                             {swapCard.chainKind === "solana" ? "Solana" : "Ethereum"}
                           </Text>
                         </View>
@@ -1951,56 +1972,30 @@ export default function ChatScreen() {
                           <Text style={styles.metricValue}>{swapCard.estimatedPrice}</Text>
                         </View>
                         <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>滑点</Text>
-                          <Text style={styles.metricValue}>{swapCard.slippage}%</Text>
+                          <Text style={styles.metricLabel}>价格影响</Text>
+                          <Text style={styles.metricValue}>{swapCard.priceImpact}</Text>
                         </View>
                       </View>
 
-                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "#FAF7FF", padding: 12, gap: 6 }}>
-                        <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>路径：{swapCard.fromSymbol} → {swapCard.toSymbol}</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>路由来源：{swapCard.routeLabel}</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>价格影响：{swapCard.priceImpact}</Text>
+                      <View style={styles.swapProgressPanel}>
+                        <Text style={styles.swapProgressTitle}>结果入口</Text>
+                        <Text style={styles.swapProgressLabel}>{statusLabel}</Text>
+                        <Text style={styles.cardHelperTextOnDark}>
+                          交易由 Agent 与 OKX 交易能力继续处理，最终结果以对应币种账号明细为主；若长时间未达，将由人工客服跟进。
+                        </Text>
                       </View>
-
-                      <Text style={styles.cardHelperTextOnDark}>
-                        {swapCard.phase === "awaiting_confirmation"
-                          ? "当前已生成待确认执行请求，请先前往 Agent Wallet 完成确认，再回到主线程继续广播与订单回执查询。"
-                          : swapCard.phase === "executing"
-                            ? "当前交易已进入执行链路，系统会继续承接链上回执与订单状态。"
-                            : swapCard.phase === "success"
-                              ? "当前交易已经完成回执确认，你可以继续查看成交细节与链上结果。"
-                              : swapCard.phase === "failed"
-                                ? "当前交易执行失败，建议重新检查余额、滑点与链路状态后再次发起。"
-                                : "提交前先确认余额、滑点和价格影响，避免在波动阶段直接执行。"}
-                      </Text>
-
-                      {swapCard.progress?.length ? (
-                        <View style={styles.swapProgressPanel}>
-                          <Text style={styles.swapProgressTitle}>执行链路进度</Text>
-                          {swapCard.progress.map((step) => (
-                            <View key={step.key} style={styles.swapProgressRow}>
-                              <View style={[styles.swapProgressDot, step.status === "done" ? styles.swapProgressDotDone : styles.swapProgressDotPending]} />
-                              <Text style={styles.swapProgressLabel}>{step.label}</Text>
-                              <Text style={[styles.swapProgressStatus, step.status === "done" ? styles.swapProgressStatusDone : styles.swapProgressStatusPending]}>
-                                {step.status === "done" ? "已完成" : "进行中"}
-                              </Text>
-                            </View>
-                          ))}
-                        </View>
-                      ) : null}
 
                       <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`重新报价 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol}`)}>
-                          <Text style={styles.secondaryActionText}>重新获取报价</Text>
+                        <Pressable style={styles.secondaryAction} onPress={() => router.push("/(tabs)/wallet")}>
+                          <Text style={styles.secondaryActionText}>去钱包看明细</Text>
                         </Pressable>
                         {swapCard.phase === "awaiting_confirmation" && swapCard.signatureRequest ? (
                           <Pressable style={styles.primaryAction} onPress={() => void handleSwapSignature(swapCard)}>
-                            <Text style={styles.primaryActionText}>确认交易</Text>
+                            <Text style={styles.primaryActionText}>交给 Agent Wallet 执行</Text>
                           </Pressable>
                         ) : (
                           <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                            <Text style={styles.primaryActionText}>{swapCard.phase === "success" ? "查看钱包结果" : "先确认钱包余额"}</Text>
+                            <Text style={styles.primaryActionText}>查看账号明细</Text>
                           </Pressable>
                         )}
                       </View>
@@ -2010,23 +2005,32 @@ export default function ChatScreen() {
 
                 {item.card?.kind === "transfer" ? (() => {
                   const transferCard = item.card.payload;
+                  const statusLabel = transferCard.phase === "awaiting_confirmation"
+                    ? "待 Agent Wallet 执行"
+                    : transferCard.phase === "executing"
+                      ? "执行中"
+                      : transferCard.phase === "success"
+                        ? "已写入账号明细"
+                        : transferCard.phase === "failed"
+                          ? "执行失败"
+                          : "意图已整理";
                   return (
                     <LinearGradient
-                      colors={["#FFFFFF", "#F7F4FF", "#F3F4F8"]}
+                      colors={["#FFFFFF", "#F8F6FF", "#F2F4F8"]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={styles.richCard}
                     >
                       <View style={styles.cardHeaderRow}>
                         <View style={styles.cardIconWrap}>
-                          <MaterialCommunityIcons name="send-circle-outline" size={20} color="#FFFFFF" />
+                          <MaterialCommunityIcons name="send-circle-outline" size={20} color={ManusColors.primary} />
                         </View>
                         <View style={styles.cardHeaderTextWrap}>
-                          <Text style={styles.cardEyebrow}>转账执行准备</Text>
+                          <Text style={styles.cardEyebrow}>Agent 已接管转账意图</Text>
                           <Text style={styles.cardTitle}>{transferCard.amount} {transferCard.symbol}</Text>
                         </View>
                         <View style={styles.badgeWrap}>
-                          <Text style={[styles.badgeText, { color: "#BFDBFE" }]}>
+                          <Text style={[styles.badgeText, { color: ManusColors.primary }]}>
                             {transferCard.chainKind === "solana" ? "Solana" : "Ethereum"}
                           </Text>
                         </View>
@@ -2045,36 +2049,20 @@ export default function ChatScreen() {
                         </View>
                       </View>
 
-                      <View style={{ marginTop: 14, borderRadius: 14, backgroundColor: "#FAF7FF", padding: 12, gap: 6 }}>
-                        <Text style={[styles.metricLabel, { marginBottom: 2 }]}>执行前检查</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>当前状态：{transferCard.phase === "awaiting_confirmation" ? "待执行确认" : transferCard.phase === "executing" ? "执行中" : transferCard.phase === "success" ? "已完成" : transferCard.phase === "failed" ? "执行失败" : "预览中"}</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>发送数量：{transferCard.amount} {transferCard.symbol}</Text>
-                        <Text style={[styles.metricValue, { fontSize: 13, lineHeight: 18 }]}>目标地址：{maskAddress(transferCard.toAddress)}</Text>
-                      </View>
-
-                      <Text style={styles.cardHelperTextOnDark}>
-                        提交前先确认目标地址、链路类型与资产余额，后续会继续补执行确认回传与广播回执。
-                      </Text>
-
                       <View style={styles.swapProgressPanel}>
-                        <Text style={styles.swapProgressTitle}>执行链路进度</Text>
-                        {transferCard.progress.map((step) => (
-                          <View key={step.key} style={styles.swapProgressRow}>
-                            <View style={[styles.swapProgressDot, step.status === "done" ? styles.swapProgressDotDone : styles.swapProgressDotPending]} />
-                            <Text style={styles.swapProgressLabel}>{step.label}</Text>
-                            <Text style={[styles.swapProgressStatus, step.status === "done" ? styles.swapProgressStatusDone : styles.swapProgressStatusPending]}>
-                              {step.status === "done" ? "已完成" : "进行中"}
-                            </Text>
-                          </View>
-                        ))}
+                        <Text style={styles.swapProgressTitle}>结果入口</Text>
+                        <Text style={styles.swapProgressLabel}>{statusLabel}</Text>
+                        <Text style={styles.cardHelperTextOnDark}>
+                          转账发起后不再由聊天主线程追单，最终结果会回到对应币种账号明细；若长期未达，将由人工客服协助处理。
+                        </Text>
                       </View>
 
                       <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`确认一下 ${transferCard.amount} ${transferCard.symbol} 转账条件`)}>
-                          <Text style={styles.secondaryActionText}>继续确认条件</Text>
+                        <Pressable style={styles.secondaryAction} onPress={() => router.push("/(tabs)/wallet")}>
+                          <Text style={styles.secondaryActionText}>去钱包看明细</Text>
                         </Pressable>
                         <Pressable style={styles.primaryAction} onPress={() => void handleTransferSignature(transferCard)}>
-                           <Text style={styles.primaryActionText}>确认转账</Text>
+                           <Text style={styles.primaryActionText}>交给 Agent Wallet 执行</Text>
                         </Pressable>
                       </View>
                     </LinearGradient>
@@ -2448,17 +2436,14 @@ const styles = StyleSheet.create({
     color: "#666C85",
   },
   richCard: {
-    marginTop: 12,
-    borderRadius: 24,
-    padding: 16,
-    gap: 14,
+    marginTop: ManusSpacing.lg,
+    borderRadius: ManusRadius.card,
+    padding: ManusSpacing.card,
+    gap: ManusSpacing.md,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.06,
-    shadowRadius: 22,
-    elevation: 4,
+    borderColor: ManusColors.divider,
+    backgroundColor: ManusColors.surface,
+    ...ManusShadow,
   },
   glassCard: {
     marginTop: 12,
@@ -2480,12 +2465,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   cardIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: ManusRadius.control,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(110,91,255,0.10)",
+    backgroundColor: ManusColors.surfaceTint,
+    borderWidth: 1,
+    borderColor: "rgba(110,91,255,0.12)",
   },
   assetIconWrap: {
     backgroundColor: "rgba(124,58,237,0.10)",
@@ -2495,20 +2482,18 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   cardEyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
+    ...ManusTypography.caption,
+    color: ManusColors.primary,
     fontWeight: "700",
-    letterSpacing: 0.4,
-    color: "#6E5BFF",
+    letterSpacing: 0.3,
   },
   darkEyebrow: {
     color: "#7C3AED",
   },
   cardTitle: {
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: "800",
-    color: "#111827",
+    ...ManusTypography.sectionTitle,
+    color: ManusColors.text,
+    fontWeight: "700",
   },
   darkTitle: {
     color: "#1A1A2E",
@@ -2516,10 +2501,10 @@ const styles = StyleSheet.create({
   badgeWrap: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(110,91,255,0.10)",
+    borderRadius: ManusRadius.pill,
+    backgroundColor: ManusColors.surfaceTint,
     borderWidth: 1,
-    borderColor: "rgba(110,91,255,0.14)",
+    borderColor: "rgba(110,91,255,0.12)",
   },
   badgeText: {
     fontSize: 12,
@@ -2527,10 +2512,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   priceValue: {
+    ...ManusTypography.numericHero,
     fontSize: 30,
     lineHeight: 36,
-    fontWeight: "800",
-    color: "#111827",
+    color: ManusColors.text,
   },
   metricGrid: {
     flexDirection: "row",
@@ -2538,23 +2523,23 @@ const styles = StyleSheet.create({
   },
   metricCell: {
     flex: 1,
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "#FAF7FF",
+    borderRadius: ManusRadius.control,
+    padding: ManusSpacing.md,
+    backgroundColor: ManusColors.surfaceTint,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
+    borderColor: ManusColors.divider,
     gap: 4,
   },
   metricLabel: {
-    fontSize: 11,
-    lineHeight: 16,
-    color: "#667085",
+    ...ManusTypography.caption,
+    color: ManusColors.muted,
   },
   metricValue: {
+    ...ManusTypography.secondary,
     fontSize: 14,
     lineHeight: 20,
+    color: ManusColors.text,
     fontWeight: "700",
-    color: "#111827",
   },
   cardActionRow: {
     flexDirection: "row",
@@ -2566,24 +2551,23 @@ const styles = StyleSheet.create({
     color: "#64748B",
   },
   cardHelperTextOnDark: {
-    fontSize: 12,
+    ...ManusTypography.caption,
     lineHeight: 18,
-    color: "#667085",
+    color: ManusColors.textSecondary,
   },
   swapProgressPanel: {
     marginTop: 4,
-    borderRadius: 16,
-    backgroundColor: "#FAF7FF",
+    borderRadius: ManusRadius.control,
+    backgroundColor: ManusColors.glass,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-    padding: 12,
+    borderColor: ManusColors.divider,
+    padding: ManusSpacing.md,
     gap: 8,
   },
   swapProgressTitle: {
-    fontSize: 12,
-    lineHeight: 16,
+    ...ManusTypography.caption,
+    color: ManusColors.muted,
     fontWeight: "700",
-    color: "#667085",
   },
   swapProgressRow: {
     flexDirection: "row",
@@ -2603,10 +2587,11 @@ const styles = StyleSheet.create({
   },
   swapProgressLabel: {
     flex: 1,
+    ...ManusTypography.secondary,
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "600",
-    color: "#111827",
+    fontWeight: "700",
+    color: ManusColors.text,
   },
   swapProgressStatus: {
     fontSize: 12,
@@ -2621,40 +2606,38 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     flex: 1,
-    minHeight: 42,
-    borderRadius: 16,
+    minHeight: 44,
+    borderRadius: ManusRadius.button,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#6E5BFF",
+    backgroundColor: ManusColors.primary,
     paddingHorizontal: 14,
-    shadowColor: "#C7BAFF",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.16,
-    shadowRadius: 12,
-    elevation: 2,
+    ...ManusEmphasisShadow,
   },
   primaryActionText: {
+    ...ManusTypography.button,
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
+    fontWeight: "700",
     color: "#FFFFFF",
   },
   secondaryAction: {
     flex: 1,
-    minHeight: 42,
-    borderRadius: 16,
+    minHeight: 44,
+    borderRadius: ManusRadius.button,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: ManusColors.surface,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
+    borderColor: ManusColors.divider,
     paddingHorizontal: 14,
   },
   secondaryActionText: {
+    ...ManusTypography.secondary,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "700",
-    color: "#6E5BFF",
+    color: ManusColors.primary,
   },
   secondaryActionLight: {
     flex: 1,
@@ -2781,13 +2764,13 @@ const styles = StyleSheet.create({
   },
   primaryGhostAction: {
     flex: 1,
-    minHeight: 42,
-    borderRadius: 16,
+    minHeight: 44,
+    borderRadius: ManusRadius.button,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
+    backgroundColor: ManusColors.surfaceTint,
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
+    borderColor: ManusColors.divider,
     paddingHorizontal: 14,
   },
   memeRow: {

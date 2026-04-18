@@ -59,6 +59,7 @@ export type InvokeParams = {
   tool_choice?: ToolChoice;
   maxTokens?: number;
   max_tokens?: number;
+  temperature?: number;
   outputSchema?: OutputSchema;
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
@@ -201,14 +202,30 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+const normalizeApiUrl = (rawUrl: string) => {
+  const trimmed = rawUrl.trim().replace(/\/$/, "");
+  if (!trimmed) {
+    return "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+  }
+
+  if (/\/chat\/completions$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/\/(v1|api\/paas\/v4)$/i.test(trimmed)) {
+    return `${trimmed}/chat/completions`;
+  }
+
+  return `${trimmed}/chat/completions`;
+};
+
+const resolveApiUrl = () => normalizeApiUrl(ENV.llmApiUrl || ENV.forgeApiUrl);
+
+const resolveApiKey = () => ENV.llmApiKey || ENV.forgeApiKey;
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!resolveApiKey()) {
+    throw new Error("LLM_API_KEY is not configured");
   }
 };
 
@@ -264,10 +281,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
     responseFormat,
     response_format,
+    temperature,
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: ENV.llmModel?.trim() || "glm-5.1",
     messages: messages.map(normalizeMessage),
   };
 
@@ -281,6 +299,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   payload.max_tokens = 32768;
+  if (typeof temperature === "number" && Number.isFinite(temperature)) {
+    payload.temperature = temperature;
+  }
   payload.thinking = {
     budget_tokens: 128,
   };
@@ -300,7 +321,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${resolveApiKey()}`,
     },
     body: JSON.stringify(payload),
   });
