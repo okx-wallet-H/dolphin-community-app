@@ -21,16 +21,9 @@ export default function TabLayout() {
         tabBarActiveTintColor: PRIMARY,
         tabBarInactiveTintColor: TEXT_MUTED,
         tabBarStyle: {
+          display: "none",
           position: "absolute",
-          left: 16,
-          right: 16,
-          bottom: safeBottom,
-          height: 82,
-          paddingTop: 10,
-          paddingBottom: 10,
-          borderTopWidth: 0,
-          backgroundColor: "transparent",
-          elevation: 0,
+          height: 0,
         },
         tabBarItemStyle: {
           borderRadius: 24,
@@ -80,6 +73,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="wallet"
         options={{
+          href: null,
           title: "钱包",
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="house.fill" color={color} />,
         }}
@@ -87,6 +81,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="market"
         options={{
+          href: null,
           title: "行情",
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="chart.line.uptrend.xyaxis" color={color} />,
         }}
@@ -101,6 +96,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="earn"
         options={{
+          href: null,
           title: "赚币",
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="sparkles" color={color} />,
         }}
@@ -108,6 +104,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
+          href: null,
           title: "我的",
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.crop.circle" color={color} />,
         }}
