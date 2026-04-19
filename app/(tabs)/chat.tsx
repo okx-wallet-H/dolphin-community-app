@@ -1681,11 +1681,11 @@ export default function ChatScreen() {
                 ]}
               >
                 {item.title ? (
-                  <Text style={styles.bubbleTitle}>{item.title}</Text>
+                  <Text style={[styles.bubbleTitle, isUser && styles.userText]}>{item.title}</Text>
                 ) : null}
-                <Text style={styles.bubbleContent}>{item.content}</Text>
+                <Text style={[styles.bubbleContent, isUser && styles.userText]}>{item.content}</Text>
                 {item.meta ? (
-                  <Text style={styles.bubbleMeta}>{item.meta}</Text>
+                  <Text style={[styles.bubbleMeta, isUser && styles.userMetaText]}>{item.meta}</Text>
                 ) : null}
 
                 {item.card?.kind === "price" ? (() => {
@@ -2206,8 +2206,9 @@ const styles = StyleSheet.create({
     color: "#344054",
   },
   bubbleRow: {
-    marginBottom: 12,
+    marginBottom: 16,
     flexDirection: "row",
+    paddingHorizontal: 4,
   },
   userRow: {
     justifyContent: "flex-end",
@@ -2216,28 +2217,36 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   bubble: {
-    maxWidth: "100%",
-    borderRadius: 24,
+    borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     gap: 6,
   },
   userBubble: {
+    maxWidth: "82%",
     backgroundColor: "#7C3AED",
+    borderBottomRightRadius: 6,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 2,
   },
   assistantBubble: {
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    maxWidth: "92%",
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderBottomLeftRadius: 6,
     borderWidth: 1,
     borderColor: "rgba(15,23,42,0.06)",
     shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
-    shadowRadius: 18,
+    shadowRadius: 12,
     elevation: 2,
   },
   assistantSuccess: {
     borderColor: "#BBF7D0",
-    backgroundColor: "#ECFDF5",
+    backgroundColor: "#F0FDF4",
   },
   assistantDanger: {
     borderColor: "#FECACA",
@@ -2254,14 +2263,21 @@ const styles = StyleSheet.create({
     color: "#1A1A2E",
   },
   bubbleContent: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 22,
     color: "#31324A",
   },
   bubbleMeta: {
     fontSize: 12,
     lineHeight: 18,
-    color: "#666C85",
+    color: "#667085",
+    marginTop: 2,
+  },
+  userText: {
+    color: "#FFFFFF",
+  },
+  userMetaText: {
+    color: "rgba(255,255,255,0.7)",
   },
   richCard: {
     marginTop: ManusSpacing.lg,
