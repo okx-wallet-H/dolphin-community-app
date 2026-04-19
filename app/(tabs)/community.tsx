@@ -15,8 +15,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppHeader } from "@/components/AppHeader";
-import { TopTabs } from "@/components/TopTabs";
+
 import {
   getStrategyLogs,
   getStrategyPerformance,
@@ -293,20 +292,10 @@ export default function CommunityRoute() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PRIMARY} />}
       >
         <View style={styles.fixedHeaderWrap}>
-          <AppHeader
-            onWalletPress={() => router.push("/(tabs)/wallet")}
-            onRightPress={() => router.push("/(tabs)/profile")}
-            centerContent={
-              <TopTabs
-                activeTab="community"
-                onChange={(tab) => {
-                  if (tab === "chat") {
-                    router.push("/(tabs)/chat");
-                  }
-                }}
-              />
-            }
-          />
+          <Pressable style={styles.backRow} onPress={() => router.push("/(tabs)/chat")}>
+            <MaterialCommunityIcons name="arrow-left" size={20} color={TEXT_PRIMARY} />
+            <Text style={styles.backText}>返回对话</Text>
+          </Pressable>
         </View>
 
         <View style={styles.searchHeader}>
@@ -552,6 +541,20 @@ const styles = StyleSheet.create({
   },
   fixedHeaderWrap: {
     marginBottom: 2,
+  },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    alignSelf: "flex-start",
+  },
+  backText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: TEXT_PRIMARY,
   },
   scrollView: {
     flex: 1,

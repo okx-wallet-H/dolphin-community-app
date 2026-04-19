@@ -258,16 +258,16 @@ export default function MarketScreen() {
         }
         ListHeaderComponent={
           <View style={styles.headerStack}>
+            <Pressable style={styles.backRow} onPress={() => router.push("/(tabs)/chat")}>
+              <Text style={styles.backText}>{"< 返回对话"}</Text>
+            </Pressable>
             <View style={styles.topBar}>
               <View style={styles.headerTextWrap}>
                 <Text style={styles.pageTitle}>行情</Text>
                 <Text style={styles.pageSubtitle}>
-                  聚合 BTC、ETH、SOL 等主流资产价格，帮助投资人快速理解产品的实时行情能力与资产观察视角。
+                  聚合 BTC、ETH、SOL 等主流资产价格，实时行情一屏可读。
                 </Text>
               </View>
-              <Pressable style={styles.inlineLink} onPress={() => router.push("/(tabs)/wallet")}>
-                <Text style={styles.inlineLinkText}>返回钱包</Text>
-              </Pressable>
             </View>
 
             <LinearGradient
@@ -425,6 +425,17 @@ const styles = StyleSheet.create({
   headerStack: {
     gap: ManusSpacing.lg,
     marginBottom: ManusSpacing.md,
+  },
+  backRow: {
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  backText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: PRIMARY,
   },
   topBar: {
     gap: ManusSpacing.md,

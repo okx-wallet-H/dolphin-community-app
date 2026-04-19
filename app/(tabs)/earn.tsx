@@ -168,14 +168,14 @@ export default function EarnScreen() {
         contentContainerStyle={styles.contentContainer}
         ListHeaderComponent={
           <View style={styles.headerStack}>
+            <Pressable
+              style={styles.backRow}
+              onPress={() => router.push("/(tabs)/chat")}
+            >
+              <Text style={styles.backText}>{"< 返回对话"}</Text>
+            </Pressable>
             <View style={styles.topBar}>
               <Text style={styles.pageTitle}>AI 智能赚币</Text>
-              <Pressable
-                style={styles.inlineLink}
-                onPress={() => router.push("/(tabs)/wallet")}
-              >
-                <Text style={styles.inlineLinkText}>返回钱包</Text>
-              </Pressable>
             </View>
 
               <Text style={styles.pageSubtitle}>
@@ -380,6 +380,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+  },
+  backRow: {
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  backText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: PRIMARY,
   },
   pageTitle: {
     ...ManusTypography.brandTitle,

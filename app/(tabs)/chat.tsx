@@ -16,7 +16,7 @@ import {
 
 import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
-import { TopTabs } from "@/components/TopTabs";
+
 import { ManusColors, ManusEmphasisShadow, ManusRadius, ManusShadow, ManusSpacing, ManusTypography } from "@/constants/manus-ui";
 import { buildXLayerBuilderCodePayload } from "@/lib/builder-code";
 import {
@@ -63,14 +63,7 @@ const SIGNATURE_PORTAL_URL = (
   ""
 ).trim();
 
-const chatFilterTabs = [
-  { key: "all", label: "全部" },
-  { key: "favorite", label: "收藏" },
-  { key: "trade", label: "交易" },
-  { key: "data", label: "数据" },
-] as const;
 
-type ChatFilterKey = (typeof chatFilterTabs)[number]["key"];
 
 type PriceCardPayload = {
   snapshot: MarketSnapshot;
@@ -550,7 +543,7 @@ function buildTransferMessages(
 
 function extractPriceSymbol(message: string): string | null {
   const normalized = message.trim().toUpperCase();
-  const wantsPrice = /(价格|多少钱|行情|报价|涨跌|PRICE|QUOTE|MARKET)/i.test(message);
+  const wantsPrice = /(价格|多少钱|行���|报价|涨跌|PRICE|QUOTE|MARKET)/i.test(message);
 
   const aliases: Array<{ symbol: string; patterns: RegExp[] }> = [
     { symbol: "BTC", patterns: [/\bBTC\b/i, /比特币/i, /BITCOIN/i] },
@@ -777,7 +770,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState("");
-  const [activeFilter, setActiveFilter] = useState<ChatFilterKey>("all");
+
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
 
   const incomingQuery = typeof params.q === "string" ? params.q.trim() : "";
@@ -1190,7 +1183,7 @@ export default function ChatScreen() {
               title: confirmCard?.title ?? "交易确认",
               content:
                 confirmCard?.description ??
-                `已识别兑换请求：将 ${triggeredIntent.payload.amount} ${triggeredIntent.payload.fromSymbol} 兑换为 ${triggeredIntent.payload.toSymbol}。`,
+                `已识��兑换请求：将 ${triggeredIntent.payload.amount} ${triggeredIntent.payload.fromSymbol} 兑换为 ${triggeredIntent.payload.toSymbol}。`,
               meta: `已命中固定交易触发规则（${triggeredIntent.source}）`,
             },
             ...swapMessages,
@@ -1546,7 +1539,7 @@ export default function ChatScreen() {
           role: "assistant",
           title: "已进入转账续跑",
           content: txHash
-            ? "我已经收到这笔转账的确认结果与链上回执，正在把结果承接回对话主线程。"
+            ? "我已经收到这笔转账���确认结果与链上回执，正在把结果承接回对话主线程。"
             : "我已经拿到你刚刚确认的转账交易，正在恢复主线程并更新当前执行阶段。",
           meta: txHash
             ? `链上回执：${txHash}`
@@ -1618,37 +1611,9 @@ export default function ChatScreen() {
           onWalletPress={() => router.push("/(tabs)/wallet")}
           onRightPress={() => router.push("/(tabs)/profile")}
           centerContent={
-            <TopTabs
-              activeTab="chat"
-              onChange={(tab) => {
-                if (tab === "community") {
-                  router.push("/(tabs)/community");
-                }
-              }}
-            />
+            <Text style={styles.headerBrandText}>Dolphin</Text>
           }
         />
-
-        <View style={styles.filterRow}>
-          {chatFilterTabs.map((filter) => {
-            const active = filter.key === activeFilter;
-            return (
-              <Pressable
-                key={filter.key}
-                onPress={() => setActiveFilter(filter.key)}
-                style={({ pressed }) => [
-                  styles.filterChip,
-                  active && styles.filterChipActive,
-                  pressed && styles.filterChipPressed,
-                ]}
-              >
-                <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-                  {filter.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
       </View>
 
       <FlatList
@@ -1658,43 +1623,37 @@ export default function ChatScreen() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          <View style={styles.headerBlock}>
-            <LinearGradient
-              colors={["rgba(255,255,255,0.98)", "rgba(244,241,255,0.96)", "rgba(237,242,255,0.94)"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.heroCard}
-            >
-              <View style={styles.heroInner}>
-                <View style={styles.statusPill}>
-                  <Text style={styles.statusPillText}>{isFromCommunity ? "已从社区进入对话" : "Agent 对话主线程"}</Text>
-                </View>
-                <Text style={styles.heroTitle}>{isFromCommunity ? `继续理解：${incomingQuery}` : "在聊天里完成理解、决策与执行"}</Text>
-                <Text style={styles.heroDescription}>
-                  {isFromCommunity ? "我已经接住你在社区里输入的关注点，接下来会围绕这个主题继续分析、判断并给出可执行结果。" : walletHint}
-                </Text>
-              </View>
-            </LinearGradient>
-
-            <FlatList
-              horizontal
-              data={suggestions}
-              keyExtractor={(item) => item}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.suggestionList}
-              renderItem={({ item }) => (
-                <Pressable
-                  onPress={() => void sendMessage(item)}
-                  style={({ pressed }) => [
-                    styles.suggestionChip,
-                    pressed && styles.suggestionChipPressed,
-                  ]}
+          messages.length <= 1 ? (
+            <View style={styles.welcomeBlock}>
+              <View style={styles.welcomeLogoWrap}>
+                <LinearGradient
+                  colors={["#7C3AED", "#6D28D9"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.welcomeLogo}
                 >
-                  <Text style={styles.suggestionText}>{item}</Text>
-                </Pressable>
-              )}
-            />
-          </View>
+                  <MaterialCommunityIcons name="dolphin" size={32} color="#FFFFFF" />
+                </LinearGradient>
+              </View>
+              <Text style={styles.welcomeTitle}>{"Hi, I'm Dolphin"}</Text>
+              <Text style={styles.welcomeSubtitle}>{"你的链上 AI 助手，随时为你服务"}</Text>
+
+              <View style={styles.suggestionsWrap}>
+                {suggestions.map((item) => (
+                  <Pressable
+                    key={item}
+                    onPress={() => void sendMessage(item)}
+                    style={({ pressed }) => [
+                      styles.suggestionChip,
+                      pressed && styles.suggestionChipPressed,
+                    ]}
+                  >
+                    <Text style={styles.suggestionText}>{item}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null
         }
         renderItem={({ item }) => {
           const isUser = item.role === "user";
@@ -1722,11 +1681,11 @@ export default function ChatScreen() {
                 ]}
               >
                 {item.title ? (
-                  <Text style={styles.bubbleTitle}>{item.title}</Text>
+                  <Text style={[styles.bubbleTitle, isUser && styles.userText]}>{item.title}</Text>
                 ) : null}
-                <Text style={styles.bubbleContent}>{item.content}</Text>
+                <Text style={[styles.bubbleContent, isUser && styles.userText]}>{item.content}</Text>
                 {item.meta ? (
-                  <Text style={styles.bubbleMeta}>{item.meta}</Text>
+                  <Text style={[styles.bubbleMeta, isUser && styles.userMetaText]}>{item.meta}</Text>
                 ) : null}
 
                 {item.card?.kind === "price" ? (() => {
@@ -2116,89 +2075,50 @@ export default function ChatScreen() {
             </View>
           );
         }}
-        ListFooterComponent={
-          <View style={styles.footerComposerWrap}>
-            <View style={styles.quickNavRow}>
-              <Pressable
-                style={styles.quickNavCard}
-                onPress={() => router.push("/(tabs)/wallet")}
-              >
-                <Text style={styles.quickNavTitle}>查看钱包资产</Text>
-                <Text style={styles.quickNavDesc}>
-                  回到资产页核对余额和代币明细。
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.quickNavCard}
-                onPress={() => router.push("/(tabs)/earn")}
-              >
-                <Text style={styles.quickNavTitle}>去赚币页</Text>
-                <Text style={styles.quickNavDesc}>
-                  查看策略选择与自动赚币回执。
-                </Text>
-              </Pressable>
-              <Pressable
-                style={styles.quickNavCard}
-                onPress={() => router.push("/(tabs)/wallet")}
-              >
-                <Text style={styles.quickNavTitle}>返回资产总览</Text>
-                <Text style={styles.quickNavDesc}>
-                  回到主资产页，验证登录后的主路径跳转是否顺畅。
-                </Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.footerComposer}>
-              <Text style={styles.composerLabel}>输入区</Text>
-              <Text style={styles.composerHint}>
-                例如：帮我查一下 ETH 最新价格；把 100 USDT 换成 ETH；转 20 USDT
-                到某个地址；或者给我一个低波动赚币方案。
-              </Text>
-
-              <View style={styles.composerRow}>
-              <View style={styles.inputWrap}>
-                <TextInput
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="说说你想让海豚社区帮你做什么"
-                  placeholderTextColor="rgba(148,163,184,0.72)"
-                  multiline
-                  returnKeyType="done"
-                  onSubmitEditing={() => void sendMessage()}
-                  style={styles.input}
-                />
-              </View>
-
-              <Pressable
-                onPress={() => void sendMessage()}
-                disabled={submitting}
-                style={({ pressed }) => [
-                  styles.sendButtonWrap,
-                  (pressed || submitting) && styles.sendButtonPressed,
-                ]}
-              >
-                <LinearGradient
-                  colors={["#111827", "#1F2937"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.sendButton}
-                >
-                  {submitting ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.sendButtonText}>发</Text>
-                  )}
-                </LinearGradient>
-              </Pressable>
-            </View>
-
-              {errorText ? (
-                <Text style={styles.errorText}>{errorText}</Text>
-              ) : null}
-            </View>
-          </View>
-        }
+        ListFooterComponent={<View style={{ height: 100 }} />}
       />
+
+      <View style={styles.floatingComposer}>
+        <View style={styles.composerRow}>
+          <View style={styles.inputWrap}>
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder="输入你的问题..."
+              placeholderTextColor="rgba(148,163,184,0.6)"
+              returnKeyType="send"
+              onSubmitEditing={() => void sendMessage()}
+              style={styles.input}
+            />
+          </View>
+
+          <Pressable
+            onPress={() => void sendMessage()}
+            disabled={submitting}
+            style={({ pressed }) => [
+              styles.sendButtonWrap,
+              (pressed || submitting) && styles.sendButtonPressed,
+            ]}
+          >
+            <LinearGradient
+              colors={["#7C3AED", "#6D28D9"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.sendButton}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <MaterialCommunityIcons name="arrow-up" size={22} color="#FFFFFF" />
+              )}
+            </LinearGradient>
+          </Pressable>
+        </View>
+
+        {errorText ? (
+          <Text style={styles.errorText}>{errorText}</Text>
+        ) : null}
+      </View>
     </ScreenContainer>
   );
 }
@@ -2207,169 +2127,77 @@ const styles = StyleSheet.create({
   fixedHeaderWrap: {
     backgroundColor: "#F5F5F7",
     paddingTop: 4,
-    paddingBottom: 10,
+    paddingBottom: 6,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(15,23,42,0.05)",
-    gap: 8,
+    borderBottomColor: "rgba(15,23,42,0.04)",
   },
-  filterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    paddingHorizontal: 20,
-  },
-  filterChip: {
-    flex: 1,
-    minHeight: 36,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.72)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-  },
-  filterChipActive: {
-    backgroundColor: "#111827",
-    borderColor: "#111827",
-  },
-  filterChipPressed: {
-    opacity: 0.88,
-  },
-  filterChipText: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "600",
-    color: "#667085",
-  },
-  filterChipTextActive: {
-    color: "#FFFFFF",
-  },
-  contentContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 150,
-    backgroundColor: "#F5F5F7",
-  },
-  headerBlock: {
-    marginBottom: 24,
-    gap: 16,
-    width: "100%",
-  },
-  headingWrap: {
-    gap: 8,
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  title: {
-    fontSize: 30,
-    lineHeight: 36,
+  headerBrandText: {
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: "800",
     color: "#1A1A2E",
+    letterSpacing: -0.3,
   },
-  statusPill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(17,24,39,0.06)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.05)",
+  contentContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 100,
+    backgroundColor: "#F5F5F7",
   },
-  statusPillText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "700",
-    color: "#475467",
+  welcomeBlock: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 60,
+    paddingBottom: 32,
+    gap: 12,
   },
-  subtitle: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: "#666C85",
+  welcomeLogoWrap: {
+    marginBottom: 8,
   },
-  heroCard: {
-    borderRadius: 30,
-    padding: 20,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.06,
-    shadowRadius: 24,
+  welcomeLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
     elevation: 4,
   },
-  heroInner: {
-    gap: 8,
-  },
-  heroEyebrow: {
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.6,
-    color: "#666C85",
-  },
-  heroTitle: {
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: "700",
+  welcomeTitle: {
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "800",
+    color: "#1A1A2E",
     letterSpacing: -0.5,
-    color: "#111827",
   },
-  heroDescription: {
+  welcomeSubtitle: {
     fontSize: 14,
     lineHeight: 22,
-    color: "#475467",
+    color: "#667085",
+    textAlign: "center",
   },
-  quickNavRow: {
-    flexDirection: "column",
-    gap: 10,
-    width: "100%",
-  },
-  quickNavCard: {
-    width: "100%",
-    minWidth: 0,
-    borderRadius: 22,
-    padding: 15,
-    backgroundColor: "rgba(255, 255, 255, 0.82)",
-    borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.10)",
-    gap: 6,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 3,
-  },
-  quickNavTitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "700",
-    color: "#1A1A2E",
-  },
-  quickNavDesc: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#666C85",
-  },
-  suggestionList: {
-    paddingRight: 0,
-    gap: 10,
+  suggestionsWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
+    paddingTop: 12,
+    paddingHorizontal: 8,
   },
   suggestionChip: {
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "rgba(255,255,255,0.86)",
+    backgroundColor: "rgba(255,255,255,0.92)",
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
+    borderColor: "rgba(15,23,42,0.08)",
   },
   suggestionChipPressed: {
     opacity: 0.82,
+    transform: [{ scale: 0.97 }],
   },
   suggestionText: {
     fontSize: 13,
@@ -2378,8 +2206,9 @@ const styles = StyleSheet.create({
     color: "#344054",
   },
   bubbleRow: {
-    marginBottom: 12,
+    marginBottom: 16,
     flexDirection: "row",
+    paddingHorizontal: 4,
   },
   userRow: {
     justifyContent: "flex-end",
@@ -2388,28 +2217,36 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   bubble: {
-    maxWidth: "100%",
-    borderRadius: 24,
+    borderRadius: 20,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 12,
     gap: 6,
   },
   userBubble: {
+    maxWidth: "82%",
     backgroundColor: "#7C3AED",
+    borderBottomRightRadius: 6,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 2,
   },
   assistantBubble: {
-    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    maxWidth: "92%",
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderBottomLeftRadius: 6,
     borderWidth: 1,
     borderColor: "rgba(15,23,42,0.06)",
     shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.04,
-    shadowRadius: 18,
+    shadowRadius: 12,
     elevation: 2,
   },
   assistantSuccess: {
     borderColor: "#BBF7D0",
-    backgroundColor: "#ECFDF5",
+    backgroundColor: "#F0FDF4",
   },
   assistantDanger: {
     borderColor: "#FECACA",
@@ -2426,14 +2263,21 @@ const styles = StyleSheet.create({
     color: "#1A1A2E",
   },
   bubbleContent: {
-    fontSize: 14,
+    fontSize: 15,
     lineHeight: 22,
     color: "#31324A",
   },
   bubbleMeta: {
     fontSize: 12,
     lineHeight: 18,
-    color: "#666C85",
+    color: "#667085",
+    marginTop: 2,
+  },
+  userText: {
+    color: "#FFFFFF",
+  },
+  userMetaText: {
+    color: "rgba(255,255,255,0.7)",
   },
   richCard: {
     marginTop: ManusSpacing.lg,
@@ -2817,82 +2661,61 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#7C3AED",
   },
-  footerComposerWrap: {
-    marginTop: 8,
-    gap: 16,
-  },
-  footerComposer: {
-    borderRadius: 28,
-    padding: 18,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-    gap: 10,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
-    elevation: 3,
-  },
-  composerLabel: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: "#1A1A2E",
-  },
-  composerHint: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: "#666C85",
+  floatingComposer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 34,
+    backgroundColor: "rgba(245,245,247,0.95)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(15,23,42,0.05)",
+    gap: 6,
   },
   composerRow: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 12,
-    width: "100%",
+    alignItems: "center",
+    gap: 10,
   },
   inputWrap: {
     flex: 1,
     minWidth: 0,
-    minHeight: 112,
+    minHeight: 44,
+    maxHeight: 100,
     borderRadius: 22,
-    backgroundColor: "#F9FAFB",
+    backgroundColor: "rgba(255,255,255,0.96)",
     borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: "rgba(15,23,42,0.08)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    justifyContent: "center",
   },
   input: {
-    flex: 1,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 20,
     color: "#1A1A2E",
-    textAlignVertical: "top",
   },
   sendButtonWrap: {
     borderRadius: 22,
     overflow: "hidden",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.10,
-    shadowRadius: 16,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     elevation: 3,
   },
   sendButtonPressed: {
-    opacity: 0.9,
+    opacity: 0.85,
+    transform: [{ scale: 0.95 }],
   },
   sendButton: {
-    width: 54,
-    height: 54,
+    width: 44,
+    height: 44,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-  },
-  sendButtonText: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: "800",
-    color: "#FFFFFF",
   },
   errorText: {
     fontSize: 13,

@@ -1,3 +1,5 @@
+import { MaterialIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -37,6 +39,8 @@ const sections = [
 ];
 
 export default function ProfileScreen() {
+  const router = useRouter();
+
   return (
     <ScreenContainer
       className="px-4 pt-4"
@@ -50,6 +54,14 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.contentContainer}
         ListHeaderComponent={
           <View style={styles.headerStack}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() => router.push("/(tabs)/chat")}
+            >
+              <MaterialIcons name="arrow-back-ios-new" size={18} color={ManusColors.text} />
+              <Text style={styles.backButtonText}>返回对话</Text>
+            </Pressable>
+
             <View style={styles.headerTextWrap}>
               <Text style={styles.pageTitle}>我的</Text>
               <Text style={styles.pageSubtitle}>统一管理账户安全、通知提醒、界面偏好与钱包资料，延续整套产品的高端金融感与可信赖表达。</Text>
@@ -115,6 +127,20 @@ const styles = StyleSheet.create({
   headerStack: {
     marginBottom: ManusSpacing.md,
     gap: ManusSpacing.lg,
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  backButtonText: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: ManusColors.text,
   },
   headerTextWrap: {
     gap: ManusSpacing.sm,
