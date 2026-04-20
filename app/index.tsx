@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -27,38 +28,48 @@ import {
 import { getMe, sendAgentWalletOtp, verifyAgentWalletOtp } from "@/lib/_core/api";
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
-const BRAND_GRADIENT = ["#B790FF", "#8B67FF", "#6D52F6"] as const;
-const SEGMENT_BG = "#EEE7FF";
-const PAGE_BG = "#FCFBFF";
-const CARD_BG = "rgba(255,255,255,0.88)";
-const CARD_BORDER = "rgba(141, 110, 255, 0.14)";
-const INPUT_BORDER = "rgba(126, 89, 255, 0.42)";
-const TEXT_PRIMARY = "#211A3C";
-const TEXT_SECONDARY = "#5D5974";
-const TEXT_PLACEHOLDER = "#A29BBE";
-const ERROR = "#D83A52";
-const GLOW_PURPLE = "rgba(139,103,255,0.24)";
+
+// Design system colors - matching the mockup exactly
+const COLORS = {
+  bgGradientStart: "#FFFFFF",
+  bgGradientMid: "#F8F5FF",
+  bgGradientEnd: "#F0EBFF",
+  cardBg: "rgba(255,255,255,0.95)",
+  cardBorder: "rgba(139,103,255,0.12)",
+  inputBorder: "rgba(139,103,255,0.35)",
+  inputBorderFocus: "rgba(139,103,255,0.6)",
+  primaryGradientStart: "#A78BFA",
+  primaryGradientEnd: "#7C3AED",
+  textPrimary: "#1F1F3D",
+  textSecondary: "#6B6B8D",
+  textPlaceholder: "#A0A0C0",
+  error: "#EF4444",
+  success: "#7C3AED",
+  white: "#FFFFFF",
+  segmentBg: "#F3EEFF",
+  segmentActive: "#7C3AED",
+};
 
 type StatusTone = "default" | "success" | "error";
 
 const FEATURE_CARDS = [
   {
     key: "ai-wallet",
-    badge: "AI",
+    icon: "robot-outline" as const,
+    iconBg: "rgba(139,103,255,0.15)",
     title: "AI 对话钱包",
-    cardTint: "rgba(255,255,255,0.72)",
   },
   {
     key: "agent-task",
-    badge: "↗",
+    icon: "rocket-launch-outline" as const,
+    iconBg: "rgba(251,191,36,0.15)",
     title: "Agent 自动任务",
-    cardTint: "rgba(255,250,241,0.86)",
   },
   {
     key: "asset-overview",
-    badge: "◎",
+    icon: "database-outline" as const,
+    iconBg: "rgba(16,185,129,0.15)",
     title: "链上资产总览",
-    cardTint: "rgba(237,255,255,0.92)",
   },
 ] as const;
 
@@ -79,216 +90,110 @@ function normalizeErrorMessage(message: string, fallback: string): string {
     VERIFY_FAILED: "验证码校验失败，请稍后重试",
   };
 
-  if (exactMap[upper]) {
-    return exactMap[upper];
-  }
-
-  if (/invalid url/i.test(normalized)) {
-    return "服务器地址配置错误";
-  }
-
-  if (/network error|network request failed|failed to fetch/i.test(normalized)) {
-    return "网络连接失败，请检查网络";
-  }
-
-  if (/invalid email/i.test(normalized)) {
-    return "邮箱格式不正确";
-  }
-
-  if (/invalid code|invalid otp|verification code|expired/i.test(normalized)) {
-    return "验证码不正确或已过期";
-  }
-
-  if (/email service not configured/i.test(normalized)) {
-    return "邮件服务尚未配置完成";
-  }
-
-  if (/send code failed/i.test(normalized)) {
-    return "验证码发送失败，请稍后重试";
-  }
-
-  if (/verify failed/i.test(normalized)) {
-    return "验证码校验失败，请稍后重试";
-  }
-
+  if (exactMap[upper]) return exactMap[upper];
+  if (/network error|network request failed|failed to fetch/i.test(normalized)) return "网络连接失败，请检查网络";
+  if (/invalid email/i.test(normalized)) return "邮箱格式不正确";
+  if (/invalid code|invalid otp|verification code|expired/i.test(normalized)) return "验证码不正确或已过期";
   return normalized || fallback;
-}
-
-function buildDefaultStatus() {
-  return "请输入邮箱并完成验证码验证，仅保留当前已验证通过的 OKX Agent Wallet 链路。";
-}
-
-function LoginLogo() {
-  return (
-    <View style={styles.logoRow}>
-      <Image
-        source={require("@/assets/images/hwallet-official-logo.png")}
-        style={styles.logoImage}
-        resizeMode="contain"
-      />
-      <Text style={styles.logoTitle}>H Wallet</Text>
-    </View>
-  );
 }
 
 export default function LoginRoute() {
   const scrollRef = useRef<ScrollView | null>(null);
+  const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [statusTone, setStatusTone] = useState<StatusTone>("default");
-  const [statusText, setStatusText] = useState(buildDefaultStatus());
+  const [statusText, setStatusText] = useState("");
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otpRequestId, setOtpRequestId] = useState("");
-  const [maskedEmail, setMaskedEmail] = useState("");
   const [isRestoringSession, setIsRestoringSession] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-
     const restoreSession = async () => {
       try {
         const token = await getSessionToken();
-        if (!token) {
-          return;
-        }
-
+        if (!token) return;
         const cachedUser = await getUserInfo();
-        if (cachedUser) {
-          router.replace("/(tabs)/wallet");
-          return;
-        }
-
+        if (cachedUser) { router.replace("/(tabs)/wallet"); return; }
         const currentUser = await getMe();
         if (currentUser) {
-          await setUserInfo({
-            ...currentUser,
-            lastSignedIn: new Date(currentUser.lastSignedIn),
-          });
+          await setUserInfo({ ...currentUser, lastSignedIn: new Date(currentUser.lastSignedIn) });
           router.replace("/(tabs)/wallet");
           return;
         }
-
         await removeSessionToken();
         await clearUserInfo();
       } catch {
         await removeSessionToken();
         await clearUserInfo();
       } finally {
-        if (mounted) {
-          setIsRestoringSession(false);
-        }
+        if (mounted) setIsRestoringSession(false);
       }
     };
-
     restoreSession();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const helperTextColor = useMemo(() => {
-    if (statusTone === "error") return ERROR;
-    if (statusTone === "success") return "#6D52F6";
-    return TEXT_SECONDARY;
+    if (statusTone === "error") return COLORS.error;
+    if (statusTone === "success") return COLORS.success;
+    return COLORS.textSecondary;
   }, [statusTone]);
-
-  const handleFocus = () => {
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    });
-  };
 
   const handleSendOtp = async () => {
     if (!email.trim()) {
       setStatusTone("error");
-      setStatusText("请先输入邮箱地址。");
+      setStatusText("请先输入邮箱地址");
       return;
     }
-
     try {
       setIsSendingOtp(true);
       setStatusTone("default");
-      setStatusText("验证码发送中，请稍候...");
+      setStatusText("验证码发送中...");
       const result = await sendAgentWalletOtp(email.trim());
       setOtpSent(true);
-      setOtpRequestId(result.requestId || '');
-      setMaskedEmail(result.maskedEmail);
+      setOtpRequestId(result.requestId || "");
       setStatusTone("success");
-      setStatusText(
-        /verification code sent/i.test(result.message)
-          ? "验证码已发送，请前往邮箱查收。"
-          : result.message || "验证码已发送，请前往邮箱查收。",
-      );
+      setStatusText("验证码已发送，请查收邮箱");
     } catch (error) {
       setStatusTone("error");
-      setStatusText(
-        error instanceof Error
-          ? normalizeErrorMessage(error.message, "验证码发送失败，请稍后重试。")
-          : "验证码发送失败，请稍后重试。",
-      );
+      setStatusText(error instanceof Error ? normalizeErrorMessage(error.message, "验证码发送失败") : "验证码发送失败");
     } finally {
       setIsSendingOtp(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!email.trim()) {
-      setStatusTone("error");
-      setStatusText("请输入邮箱地址。");
-      return;
-    }
-
-    if (!code.trim()) {
-      setStatusTone("error");
-      setStatusText("请输入验证码。");
-      return;
-    }
-
+    if (!email.trim()) { setStatusTone("error"); setStatusText("请输入邮箱地址"); return; }
+    if (!code.trim()) { setStatusTone("error"); setStatusText("请输入验证码"); return; }
     try {
       setIsSubmitting(true);
       setStatusTone("default");
-      setStatusText("正在验证邮箱并连接当前已验证通过的 OKX Agent Wallet...");
-
+      setStatusText("正在验证...");
       const result = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ""), otpRequestId);
-      if (!result.app_session_id) {
-        throw new Error("UNAUTHORIZED");
-      }
-      if (result.mockMode) {
-        throw new Error("当前返回仍是演示钱包，已阻止登录，请检查 OKX Agent Wallet 配置。");
-      }
-      if (!result.wallet.evmAddress || !result.wallet.solanaAddress) {
-        throw new Error("OKX Agent Wallet 未返回完整的钱包地址，请稍后重试。");
-      }
+      if (!result.app_session_id) throw new Error("UNAUTHORIZED");
+      if (result.mockMode) throw new Error("当前为演示模式，请检查 OKX Agent Wallet 配置");
+      if (!result.wallet.evmAddress || !result.wallet.solanaAddress) throw new Error("钱包地址不完整");
 
       await setSessionToken(result.app_session_id);
-      await setUserInfo({
-        ...result.user,
-        lastSignedIn: new Date(result.user.lastSignedIn),
-      });
-      await AsyncStorage.setItem(
-        WALLET_STORAGE_KEY,
-        JSON.stringify({
-          email: result.wallet.email,
-          evmAddress: result.wallet.evmAddress,
-          solanaAddress: result.wallet.solanaAddress,
-          updatedAt: new Date().toISOString(),
-          mockMode: result.mockMode,
-        }),
-      );
-
+      await setUserInfo({ ...result.user, lastSignedIn: new Date(result.user.lastSignedIn) });
+      await AsyncStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify({
+        email: result.wallet.email,
+        evmAddress: result.wallet.evmAddress,
+        solanaAddress: result.wallet.solanaAddress,
+        updatedAt: new Date().toISOString(),
+        mockMode: result.mockMode,
+      }));
       setStatusTone("success");
-      setStatusText("OKX Agent Wallet 验证成功，正在进入钱包首页。");
+      setStatusText("验证成功");
       router.replace("/(tabs)/wallet");
     } catch (error) {
       setStatusTone("error");
-      setStatusText(
-        error instanceof Error
-          ? normalizeErrorMessage(error.message, "登录失败，请稍后重试。")
-          : "登录失败，请稍后重试。",
-      );
+      setStatusText(error instanceof Error ? normalizeErrorMessage(error.message, "登录失败") : "登录失败");
     } finally {
       setIsSubmitting(false);
     }
@@ -296,458 +201,304 @@ export default function LoginRoute() {
 
   if (isRestoringSession) {
     return (
-      <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
-        <View style={styles.restoringContainer}>
-          <LoginLogo />
-          <ActivityIndicator size="large" color="#7C5DFF" />
-          <Text style={styles.restoringTitle}>正在恢复登录状态</Text>
-          <Text style={styles.restoringSubtitle}>检测到有效会话后将自动进入钱包首页</Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <LinearGradient colors={[COLORS.bgGradientStart, COLORS.bgGradientMid, COLORS.bgGradientEnd]} style={StyleSheet.absoluteFill} />
+        <Image source={require("@/assets/images/hwallet-official-logo.png")} style={styles.loadingLogo} resizeMode="contain" />
+        <Text style={styles.loadingTitle}>H Wallet</Text>
+        <ActivityIndicator size="large" color={COLORS.primaryGradientEnd} style={{ marginTop: 24 }} />
+        <Text style={styles.loadingText}>正在恢复登录状态...</Text>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          <View style={styles.topGlow} />
-          <View style={styles.sideGlow} />
-          <View style={styles.bottomGlow} />
+    <View style={styles.root}>
+      <LinearGradient colors={[COLORS.bgGradientStart, COLORS.bgGradientMid, COLORS.bgGradientEnd]} style={StyleSheet.absoluteFill} />
+      
+      {/* Rainbow glow effects */}
+      <View style={styles.glowTopRight} />
+      <View style={styles.glowBottomLeft} />
 
-          <View style={styles.container}>
-            <View style={styles.heroSection}>
-              <LoginLogo />
+      <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <ScrollView
+            ref={scrollRef}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Logo */}
+            <View style={styles.logoSection}>
+              <View style={styles.logoRow}>
+                <Image source={require("@/assets/images/hwallet-official-logo.png")} style={styles.logoImage} resizeMode="contain" />
+                <Text style={styles.logoTitle}>H Wallet</Text>
+              </View>
               <Text style={styles.subtitle}>对话式 Web3 钱包</Text>
             </View>
 
+            {/* Form Card */}
             <View style={styles.formCard}>
-              <View style={styles.fieldStack}>
-                <View style={styles.inputShell}>
-                  <TextInput
-                    style={styles.input}
-                    value={email}
-                    onChangeText={setEmail}
-                    onFocus={handleFocus}
-                    placeholder="请输入邮箱地址"
-                    placeholderTextColor={TEXT_PLACEHOLDER}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    autoComplete="off"
-                    importantForAutofill="no"
-                  />
-                </View>
-
-                <View style={styles.otpShell}>
-                  <TextInput
-                    style={styles.otpInput}
-                    value={code}
-                    onChangeText={(value) => setCode(value.replace(/\D/g, ""))}
-                    onFocus={handleFocus}
-                    placeholder="请输入验证码"
-                    placeholderTextColor={TEXT_PLACEHOLDER}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    autoComplete="off"
-                    importantForAutofill="no"
-                  />
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.sendCodeButton,
-                      (pressed || isSendingOtp) && styles.buttonPressed,
-                      isSendingOtp && styles.buttonDisabled,
-                    ]}
-                    onPress={handleSendOtp}
-                    disabled={isSendingOtp}
-                  >
-                    <LinearGradient
-                      colors={BRAND_GRADIENT}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.sendCodeGradient}
-                    >
-                      {isSendingOtp ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                      ) : (
-                        <Text style={styles.sendCodeText}>发送验证码</Text>
-                      )}
-                    </LinearGradient>
+              {/* Tab Switcher */}
+              <View style={styles.tabContainer}>
+                <View style={styles.tabBg}>
+                  <Pressable style={styles.tabItem} onPress={() => setActiveTab("login")}>
+                    {activeTab === "login" ? (
+                      <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.tabActive}>
+                        <Text style={styles.tabActiveText}>登录</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.tabInactive}>
+                        <Text style={styles.tabInactiveText}>登录</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                  <Pressable style={styles.tabItem} onPress={() => setActiveTab("register")}>
+                    {activeTab === "register" ? (
+                      <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.tabActive}>
+                        <Text style={styles.tabActiveText}>注册</Text>
+                      </LinearGradient>
+                    ) : (
+                      <View style={styles.tabInactive}>
+                        <Text style={styles.tabInactiveText}>注册</Text>
+                      </View>
+                    )}
                   </Pressable>
                 </View>
-
               </View>
 
-              <Pressable
-                style={({ pressed }) => [
-                  styles.primaryButton,
-                  (pressed || isSubmitting) && styles.buttonPressed,
-                  isSubmitting && styles.buttonDisabled,
-                ]}
-                onPress={handleSubmit}
-                disabled={isSubmitting}
-              >
-                <LinearGradient
-                  colors={BRAND_GRADIENT}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.primaryButtonGradient}
-                >
+              {/* Email Input */}
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="请输入邮箱地址"
+                  placeholderTextColor={COLORS.textPlaceholder}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              {/* Code Input with Send Button */}
+              <View style={styles.codeContainer}>
+                <TextInput
+                  style={styles.codeInput}
+                  value={code}
+                  onChangeText={(v) => setCode(v.replace(/\D/g, ""))}
+                  placeholder="请输入验证码"
+                  placeholderTextColor={COLORS.textPlaceholder}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <Pressable style={styles.sendCodeBtn} onPress={handleSendOtp} disabled={isSendingOtp}>
+                  <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.sendCodeGradient}>
+                    {isSendingOtp ? (
+                      <ActivityIndicator color={COLORS.white} size="small" />
+                    ) : (
+                      <Text style={styles.sendCodeText}>发送验证码</Text>
+                    )}
+                  </LinearGradient>
+                </Pressable>
+              </View>
+
+              {/* Password Input */}
+              <View style={styles.inputContainer}>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="请输入密码"
+                  placeholderTextColor={COLORS.textPlaceholder}
+                  secureTextEntry
+                />
+              </View>
+
+              {/* Submit Button */}
+              <Pressable style={styles.submitBtn} onPress={handleSubmit} disabled={isSubmitting}>
+                <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.submitGradient}>
                   {isSubmitting ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <ActivityIndicator color={COLORS.white} size="small" />
                   ) : (
-                    <Text style={styles.primaryButtonText}>继续进入</Text>
+                    <Text style={styles.submitText}>继续进入</Text>
                   )}
                 </LinearGradient>
               </Pressable>
 
-              <Text style={[styles.statusText, { color: helperTextColor }]}>{statusText}</Text>
-              <Text style={styles.passwordHint}>当前页面只保留已验证通过的邮箱验证码链路，旧的邮箱注册接入已停用。</Text>
-              {otpSent ? (
-                <Text style={styles.otpHint}>验证码已发送至 {maskedEmail || email.trim()}，请查收后输入。</Text>
-              ) : null}
+              {/* Status Text */}
+              {statusText ? <Text style={[styles.statusText, { color: helperTextColor }]}>{statusText}</Text> : null}
             </View>
 
+            {/* Feature Cards */}
             <View style={styles.featureRow}>
               {FEATURE_CARDS.map((item) => (
-                <View key={item.key} style={[styles.featureCard, { backgroundColor: item.cardTint }]}>
-                  <View style={styles.featureBadge}>
-                    <Text style={styles.featureBadgeText}>{item.badge}</Text>
+                <View key={item.key} style={styles.featureCard}>
+                  <View style={[styles.featureIconWrap, { backgroundColor: item.iconBg }]}>
+                    <MaterialCommunityIcons name={item.icon} size={24} color={COLORS.primaryGradientEnd} />
                   </View>
                   <Text style={styles.featureTitle}>{item.title}</Text>
                 </View>
               ))}
             </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: PAGE_BG,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
-  topGlow: {
+  root: { flex: 1 },
+  safe: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+
+  // Glow effects
+  glowTopRight: {
     position: "absolute",
-    top: -48,
-    right: -14,
-    width: 248,
-    height: 248,
-    borderRadius: 124,
-    backgroundColor: "rgba(231,220,255,0.84)",
+    top: -50,
+    right: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(167,139,250,0.15)",
   },
-  sideGlow: {
+  glowBottomLeft: {
     position: "absolute",
-    top: 220,
-    right: -60,
-    width: 180,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: "rgba(246,240,255,0.92)",
+    bottom: -80,
+    left: -80,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: "rgba(139,103,255,0.1)",
   },
-  bottomGlow: {
-    position: "absolute",
-    bottom: -30,
-    left: -40,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: "rgba(245,240,255,0.98)",
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 30,
-    paddingBottom: 34,
-  },
-  heroSection: {
-    alignItems: "center",
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  logoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoImage: {
-    width: 58,
-    height: 58,
-    marginRight: 12,
-  },
-  logoTitle: {
-    fontSize: 38,
-    lineHeight: 44,
-    fontWeight: "800",
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.8,
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 18,
-    lineHeight: 24,
-    color: TEXT_PRIMARY,
-    textAlign: "center",
-  },
+
+  // Loading
+  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loadingLogo: { width: 80, height: 80 },
+  loadingTitle: { fontSize: 28, fontWeight: "800", color: COLORS.textPrimary, marginTop: 12 },
+  loadingText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 12 },
+
+  // Logo
+  logoSection: { alignItems: "center", marginTop: 40, marginBottom: 32 },
+  logoRow: { flexDirection: "row", alignItems: "center" },
+  logoImage: { width: 52, height: 52, marginRight: 12 },
+  logoTitle: { fontSize: 32, fontWeight: "800", color: COLORS.textPrimary },
+  subtitle: { fontSize: 16, color: COLORS.textSecondary, marginTop: 8 },
+
+  // Form Card
   formCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 30,
+    backgroundColor: COLORS.cardBg,
+    borderRadius: 28,
+    padding: 24,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
-    paddingHorizontal: 22,
-    paddingTop: 26,
-    paddingBottom: 22,
-    shadowColor: "#B28BFF",
-    shadowOpacity: 0.18,
-    shadowOffset: { width: 0, height: 20 },
-    shadowRadius: 34,
-    elevation: 10,
+    borderColor: COLORS.cardBorder,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 8,
   },
-  segmentWrap: {
-    alignItems: "center",
-    marginBottom: 22,
-  },
-  segmentBg: {
-    width: 280,
+
+  // Tabs
+  tabContainer: { alignItems: "center", marginBottom: 24 },
+  tabBg: {
     flexDirection: "row",
+    backgroundColor: COLORS.segmentBg,
+    borderRadius: 28,
+    padding: 4,
+  },
+  tabItem: { flex: 1 },
+  tabActive: {
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 24,
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: SEGMENT_BG,
-    borderRadius: 999,
-    padding: 6,
   },
-  segmentPressable: {
-    flex: 1,
-  },
-  segmentActivePill: {
-    height: 56,
-    borderRadius: 999,
+  tabActiveText: { fontSize: 16, fontWeight: "700", color: COLORS.white },
+  tabInactive: {
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 24,
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#8B67FF",
-    shadowOpacity: 0.28,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16,
-    elevation: 5,
   },
-  segmentInactivePill: {
-    height: 56,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  segmentActiveText: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  segmentInactiveText: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "500",
-    color: TEXT_SECONDARY,
-  },
-  fieldStack: {
-    gap: 18,
-  },
-  inputShell: {
-    height: 66,
-    borderRadius: 999,
-    borderWidth: 1.4,
-    borderColor: INPUT_BORDER,
-    backgroundColor: "rgba(255,255,255,0.98)",
-    justifyContent: "center",
-    paddingHorizontal: 22,
-    shadowColor: GLOW_PURPLE,
-    shadowOpacity: 1,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    elevation: 3,
+  tabInactiveText: { fontSize: 16, fontWeight: "500", color: COLORS.textSecondary },
+
+  // Inputs
+  inputContainer: {
+    borderWidth: 1.5,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 28,
+    marginBottom: 16,
+    backgroundColor: COLORS.white,
   },
   input: {
-    fontSize: 18,
-    lineHeight: 24,
-    color: TEXT_PRIMARY,
-    paddingVertical: 0,
-  },
-  otpShell: {
-    height: 66,
-    borderRadius: 999,
-    borderWidth: 1.4,
-    borderColor: INPUT_BORDER,
-    backgroundColor: "rgba(255,255,255,0.98)",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingLeft: 22,
-    paddingRight: 8,
-    shadowColor: GLOW_PURPLE,
-    shadowOpacity: 1,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    elevation: 3,
-  },
-  otpInput: {
-    flex: 1,
-    fontSize: 18,
-    lineHeight: 24,
-    color: TEXT_PRIMARY,
-    paddingVertical: 0,
-    paddingRight: 12,
-  },
-  sendCodeButton: {
-    width: 168,
-    height: 48,
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-  sendCodeGradient: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-  },
-  sendCodeText: {
+    height: 56,
+    paddingHorizontal: 20,
     fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    color: COLORS.textPrimary,
   },
-  primaryButton: {
-    marginTop: 26,
-    height: 66,
-    borderRadius: 999,
-    overflow: "hidden",
-    shadowColor: "#8A62FF",
-    shadowOpacity: 0.26,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 22,
-    elevation: 6,
+  codeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 28,
+    marginBottom: 16,
+    backgroundColor: COLORS.white,
+    paddingRight: 6,
   },
-  primaryButtonGradient: {
+  codeInput: {
     flex: 1,
+    height: 56,
+    paddingHorizontal: 20,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+  },
+  sendCodeBtn: { borderRadius: 22, overflow: "hidden" },
+  sendCodeGradient: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 22,
+  },
+  sendCodeText: { fontSize: 14, fontWeight: "600", color: COLORS.white },
+
+  // Submit
+  submitBtn: { borderRadius: 28, overflow: "hidden", marginTop: 8 },
+  submitGradient: {
+    height: 56,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 999,
+    borderRadius: 28,
   },
-  primaryButtonText: {
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: 0.2,
-  },
-  buttonPressed: {
-    opacity: 0.92,
-  },
-  buttonDisabled: {
-    opacity: 0.72,
-  },
-  statusText: {
-    marginTop: 16,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  passwordHint: {
-    marginTop: 8,
-    fontSize: 12,
-    lineHeight: 18,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-    opacity: 0.9,
-  },
-  otpHint: {
-    marginTop: 8,
-    fontSize: 12,
-    lineHeight: 18,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-  },
-  featureRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 26,
-  },
+  submitText: { fontSize: 18, fontWeight: "700", color: COLORS.white },
+
+  // Status
+  statusText: { textAlign: "center", fontSize: 14, marginTop: 16 },
+
+  // Features
+  featureRow: { flexDirection: "row", gap: 12, marginTop: 28 },
   featureCard: {
     flex: 1,
-    borderRadius: 22,
-    paddingTop: 18,
-    paddingBottom: 20,
-    paddingHorizontal: 10,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 12,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.72)",
-    shadowColor: "rgba(102,74,185,0.20)",
-    shadowOpacity: 1,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 20,
+    borderColor: "rgba(255,255,255,0.9)",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
     elevation: 3,
   },
-  featureBadge: {
+  featureIconWrap: {
     width: 52,
     height: 52,
-    borderRadius: 26,
-    backgroundColor: "rgba(255,255,255,0.78)",
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-    shadowColor: "rgba(139,103,255,0.18)",
-    shadowOpacity: 1,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-    elevation: 2,
+    marginBottom: 10,
   },
-  featureBadgeText: {
-    fontSize: 18,
-    lineHeight: 22,
-    fontWeight: "700",
-    color: "#835CFF",
-  },
-  featureTitle: {
-    fontSize: 14,
-    lineHeight: 19,
-    color: TEXT_PRIMARY,
-    textAlign: "center",
-    fontWeight: "600",
-  },
-  restoringContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    backgroundColor: PAGE_BG,
-  },
-  restoringTitle: {
-    marginTop: 18,
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: "700",
-    color: TEXT_PRIMARY,
-  },
-  restoringSubtitle: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-    color: TEXT_SECONDARY,
-    textAlign: "center",
-  },
+  featureTitle: { fontSize: 13, fontWeight: "600", color: COLORS.textPrimary, textAlign: "center" },
 });
