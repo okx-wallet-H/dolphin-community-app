@@ -199,6 +199,11 @@ function buildRestHeaders(method: "GET" | "POST", requestPath: string, body = ""
   const apiKey = getCredential("OKX_API_KEY");
   const secretKey = getCredential("OKX_SECRET_KEY");
   const passphrase = getCredential("OKX_PASSPHRASE");
+
+  if (!apiKey) throw new Error("缺少 OKX_API_KEY 环境变量，请在 Vercel 项目设置中配置");
+  if (!secretKey) throw new Error("缺少 OKX_SECRET_KEY 环境变量");
+  if (!passphrase) throw new Error("缺少 OKX_PASSPHRASE 环境变量");
+
   const timestamp = new Date().toISOString();
 
   return {
@@ -207,7 +212,6 @@ function buildRestHeaders(method: "GET" | "POST", requestPath: string, body = ""
     "OK-ACCESS-SIGN": sign(secretKey, timestamp, method, requestPath, body),
     "OK-ACCESS-PASSPHRASE": passphrase,
     "OK-ACCESS-TIMESTAMP": timestamp,
-    "ok-client-type": "cli",
   };
 }
 

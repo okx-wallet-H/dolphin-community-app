@@ -23,14 +23,18 @@ export default function TabLayout() {
         tabBarInactiveTintColor: COLORS.textMuted,
         tabBarStyle: {
           display: "none",
+          height: 0,
+          overflow: "hidden",
+          opacity: 0,
+          position: "absolute",
+          bottom: -100,
         },
         tabBarItemStyle: {
-          paddingTop: 6,
+          display: "none",
+          height: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-          marginTop: 2,
+          display: "none",
         },
       }}
     >
