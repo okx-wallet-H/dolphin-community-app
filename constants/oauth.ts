@@ -7,7 +7,8 @@ const bundleId = "space.manus.dolphin.community.app.t20260417000100";
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
 
-const VERIFIED_AGENT_WALLET_API_BASE_URL = "https://new-h-wallet-api.vercel.app";
+// 后端 API 与前端同域部署，直接使用相对路径即可
+const VERIFIED_AGENT_WALLET_API_BASE_URL = "";
 
 const env = {
   portal: process.env.EXPO_PUBLIC_OAUTH_PORTAL_URL ?? "",
