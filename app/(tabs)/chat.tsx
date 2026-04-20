@@ -878,101 +878,163 @@ export default function ChatScreen() {
     }
   }, [handleSwapSignature, handleTransferSignature, router, sendMessage]);
 
+  const quickActions = [
+    { key: "earn", label: "理财", icon: "cash-multiple" as const, query: "赚币产品" },
+    { key: "trade", label: "交易", icon: "swap-horizontal-bold" as const, query: "100 USDT 换 ETH" },
+    { key: "market", label: "行情", icon: "chart-line" as const, query: "BTC 价格" },
+    { key: "strategy", label: "策略", icon: "robot-outline" as const, query: "聪明钱动向" },
+  ];
+
   return (
-    <ScreenContainer
-      className="bg-white"
-      safeAreaClassName="bg-white"
-      containerClassName="bg-white"
-    >
-      <AppHeader
-        onWalletPress={() => router.push("/(tabs)/wallet")}
-        onRightPress={() => router.push("/(tabs)/profile")}
-        centerContent={<Text style={styles.headerBrand}>Dolphin</Text>}
+    <View style={styles.rootContainer}>
+      <LinearGradient
+        colors={["#FDFCFF", "#F8F5FF", "#F0EBFF"]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFill}
       />
 
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.chatContent}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          messages.length <= 1 ? (
-            <View style={styles.welcome}>
-              <View style={styles.welcomeIcon}>
-                <MaterialCommunityIcons name="dolphin" size={28} color="#FFFFFF" />
-              </View>
-              <Text style={styles.welcomeTitle}>{"Hi, I'm Dolphin"}</Text>
-              <Text style={styles.welcomeSub}>你的链上 AI 助手</Text>
-              <View style={styles.suggestGrid}>
-                {suggestions.map((s) => (
-                  <Pressable
-                    key={s.label}
-                    onPress={() => void sendMessage(s.label)}
-                    style={({ pressed }) => [styles.suggestCard, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
-                  >
-                    <MaterialCommunityIcons name={s.icon} size={18} color={ManusColors.primary} />
-                    <Text style={styles.suggestText}>{s.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) => {
-          const isUser = item.role === "user";
-          return (
-            <View style={[styles.msgRow, isUser && styles.msgRowUser]}>
-              {!isUser && (
-                <View style={styles.aiAvatar}>
-                  <MaterialCommunityIcons name="dolphin" size={14} color="#FFFFFF" />
+      <ScreenContainer
+        className="bg-transparent"
+        safeAreaClassName="bg-transparent"
+        containerClassName="bg-transparent"
+      >
+        <AppHeader
+          onWalletPress={() => router.push("/(tabs)/wallet")}
+          onRightPress={() => router.push("/(tabs)/profile")}
+          centerContent={<Text style={styles.headerBrand}>Dolphin</Text>}
+        />
+
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.chatContent}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            messages.length <= 1 ? (
+              <View style={styles.welcome}>
+                <LinearGradient
+                  colors={["#A78BFA", "#7C3AED"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.welcomeIcon}
+                >
+                  <MaterialCommunityIcons name="dolphin" size={36} color="#FFFFFF" />
+                </LinearGradient>
+                <Text style={styles.welcomeTitle}>{"Hi, I'm Dolphin"}</Text>
+                <Text style={styles.welcomeSub}>你的链上 AI 助手，随时为你服务</Text>
+                <View style={styles.suggestGrid}>
+                  {suggestions.map((s) => (
+                    <Pressable
+                      key={s.label}
+                      onPress={() => void sendMessage(s.label)}
+                      style={({ pressed }) => [styles.suggestCard, pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] }]}
+                    >
+                      <View style={styles.suggestIconWrap}>
+                        <MaterialCommunityIcons name={s.icon} size={18} color={ManusColors.primary} />
+                      </View>
+                      <Text style={styles.suggestText}>{s.label}</Text>
+                    </Pressable>
+                  ))}
                 </View>
-              )}
-              <View style={[styles.msgContent, isUser && styles.msgContentUser]}>
-                <Text style={[styles.msgText, isUser && styles.msgTextUser]}>{item.content}</Text>
-                {item.card && renderCard(item.card)}
               </View>
-            </View>
-          );
-        }}
-        ListFooterComponent={<View style={{ height: 100 }} />}
-      />
+            ) : null
+          }
+          renderItem={({ item }) => {
+            const isUser = item.role === "user";
+            return (
+              <View style={[styles.msgRow, isUser && styles.msgRowUser]}>
+                {!isUser && (
+                  <LinearGradient
+                    colors={["#A78BFA", "#7C3AED"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.aiAvatar}
+                  >
+                    <MaterialCommunityIcons name="dolphin" size={14} color="#FFFFFF" />
+                  </LinearGradient>
+                )}
+                <View style={[styles.msgContent, isUser && styles.msgContentUser]}>
+                  {isUser ? (
+                    <View style={styles.userBubble}>
+                      <Text style={styles.userBubbleText}>{item.content}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.msgText}>{item.content}</Text>
+                  )}
+                  {item.card && renderCard(item.card)}
+                </View>
+              </View>
+            );
+          }}
+          ListFooterComponent={<View style={{ height: 160 }} />}
+        />
 
-      {/* Floating composer */}
-      <View style={styles.composer}>
-        <View style={styles.composerInner}>
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder="输入你的问题..."
-            placeholderTextColor="#9CA3AF"
-            returnKeyType="send"
-            onSubmitEditing={() => void sendMessage()}
-            style={styles.composerInput}
-          />
-          <Pressable
-            onPress={() => void sendMessage()}
-            disabled={submitting}
-            style={({ pressed }) => [styles.sendBtn, (pressed || submitting) && { opacity: 0.6 }]}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <MaterialCommunityIcons name="arrow-up" size={20} color="#FFFFFF" />
-            )}
-          </Pressable>
+        {/* Quick Actions + Composer */}
+        <View style={styles.bottomPanel}>
+          <View style={styles.quickActions}>
+            {quickActions.map((a) => (
+              <Pressable
+                key={a.key}
+                onPress={() => void sendMessage(a.query)}
+                style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.95 }] }]}
+              >
+                <View style={styles.quickIconWrap}>
+                  <MaterialCommunityIcons name={a.icon} size={22} color={ManusColors.primary} />
+                </View>
+                <Text style={styles.quickLabel}>{a.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.composerWrap}>
+            <View style={styles.composerInner}>
+              <TextInput
+                value={input}
+                onChangeText={setInput}
+                placeholder="输入消息..."
+                placeholderTextColor="#9CA3AF"
+                returnKeyType="send"
+                onSubmitEditing={() => void sendMessage()}
+                style={styles.composerInput}
+              />
+              <Pressable
+                onPress={() => void sendMessage()}
+                disabled={submitting}
+                style={({ pressed }) => [styles.sendBtn, (pressed || submitting) && { opacity: 0.6, transform: [{ scale: 0.95 }] }]}
+              >
+                <LinearGradient
+                  colors={["#A78BFA", "#7C3AED"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.sendBtnGradient}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <MaterialCommunityIcons name="send" size={18} color="#FFFFFF" />
+                  )}
+                </LinearGradient>
+              </Pressable>
+            </View>
+            {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
+          </View>
         </View>
-        {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
-      </View>
-    </ScreenContainer>
+      </ScreenContainer>
+    </View>
   );
 }
 
 /* ══════════════════════════════════════════════════
- *  Styles — Pure white + purple, Grok-inspired
+ *  Styles — Gradient + Glass morphism
  * ══════════════════════════════════════════════════ */
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+  },
+
   /* Header */
   headerBrand: {
     fontSize: 18,
@@ -985,54 +1047,74 @@ const styles = StyleSheet.create({
   chatContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 100,
+    paddingBottom: 20,
   },
 
   /* Welcome */
   welcome: {
     alignItems: "center",
-    paddingTop: 80,
-    paddingBottom: 40,
-    gap: 8,
+    paddingTop: 60,
+    paddingBottom: 32,
+    gap: 10,
   },
   welcomeIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: ManusColors.primary,
+    width: 72,
+    height: 72,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 12,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
   },
   welcomeTitle: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     color: ManusColors.text,
     letterSpacing: -0.5,
   },
   welcomeSub: {
     fontSize: 14,
     color: ManusColors.muted,
+    marginTop: 2,
   },
   suggestGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
-    gap: 8,
-    marginTop: 24,
-    paddingHorizontal: 16,
+    gap: 10,
+    marginTop: 28,
+    paddingHorizontal: 8,
   },
   suggestCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: ManusColors.surfaceTint,
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderWidth: 1,
+    borderColor: "rgba(124,58,237,0.1)",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  suggestIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "rgba(124,58,237,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   suggestText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     color: ManusColors.text,
   },
@@ -1042,23 +1124,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     marginBottom: 16,
-    gap: 8,
+    gap: 10,
   },
   msgRowUser: {
     justifyContent: "flex-end",
   },
   aiAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    backgroundColor: ManusColors.primary,
+    width: 28,
+    height: 28,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
   },
   msgContent: {
-    maxWidth: "85%",
-    gap: 8,
+    maxWidth: "82%",
+    gap: 10,
   },
   msgContentUser: {
     alignItems: "flex-end",
@@ -1068,53 +1149,70 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: ManusColors.text,
   },
-  msgTextUser: {
-    backgroundColor: ManusColors.primary,
-    color: "#FFFFFF",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    overflow: "hidden",
+  userBubble: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(124,58,237,0.15)",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  userBubbleText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: ManusColors.text,
   },
 
-  /* Rich cards */
+  /* Rich cards — Glass morphism */
   card: {
-    borderRadius: 16,
-    padding: 14,
-    gap: 10,
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+    backgroundColor: "rgba(255,255,255,0.88)",
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.04)",
+    borderColor: "rgba(124,58,237,0.08)",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
   },
   cardHead: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
   cardDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   cardLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
     color: ManusColors.text,
     flex: 1,
   },
   cardBadge: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "700",
   },
   cardHero: {
-    fontSize: 26,
-    fontWeight: "700",
+    fontSize: 28,
+    fontWeight: "800",
     color: ManusColors.text,
     letterSpacing: -0.8,
   },
   cardMetaRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    gap: 12,
   },
   cardMeta: {
     fontSize: 12,
@@ -1122,21 +1220,21 @@ const styles = StyleSheet.create({
   },
   cardActions: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
+    gap: 10,
+    marginTop: 6,
   },
   cardBtn: {
     flex: 1,
-    height: 36,
-    borderRadius: 10,
+    height: 40,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.8)",
+    backgroundColor: "rgba(255,255,255,0.9)",
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
+    borderColor: "rgba(124,58,237,0.12)",
   },
   cardBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     color: ManusColors.textSecondary,
   },
@@ -1145,7 +1243,7 @@ const styles = StyleSheet.create({
     borderWidth: 0,
   },
   cardBtnPrimaryText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "600",
     color: "#FFFFFF",
   },
@@ -1155,7 +1253,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(0,0,0,0.04)",
   },
@@ -1167,7 +1265,7 @@ const styles = StyleSheet.create({
   listSub: {
     fontSize: 11,
     color: ManusColors.muted,
-    marginTop: 1,
+    marginTop: 2,
   },
   listValue: {
     fontSize: 14,
@@ -1175,39 +1273,71 @@ const styles = StyleSheet.create({
     color: ManusColors.text,
   },
 
-  /* Composer */
-  composer: {
+  /* Bottom panel */
+  bottomPanel: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 12,
     paddingBottom: 34,
-    backgroundColor: "rgba(255,255,255,0.95)",
+    paddingHorizontal: 16,
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(124,58,237,0.08)",
+    gap: 12,
+  },
+  quickActions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  quickBtn: {
+    alignItems: "center",
+    gap: 6,
+  },
+  quickIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(124,58,237,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: ManusColors.muted,
+  },
+  composerWrap: {
+    gap: 4,
   },
   composerInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F3F4F6",
-    borderRadius: 24,
-    paddingLeft: 16,
-    paddingRight: 4,
-    paddingVertical: 4,
+    gap: 10,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "rgba(124,58,237,0.12)",
+    paddingLeft: 18,
+    paddingRight: 5,
+    paddingVertical: 5,
   },
   composerInput: {
     flex: 1,
     fontSize: 15,
     lineHeight: 20,
     color: ManusColors.text,
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: ManusColors.primary,
+    borderRadius: 22,
+    overflow: "hidden",
+  },
+  sendBtnGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

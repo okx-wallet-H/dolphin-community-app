@@ -55,6 +55,11 @@ export const ManusColors = {
   iconBgBlue: "rgba(59, 130, 246, 0.12)",
   iconBgGreen: "rgba(16, 185, 129, 0.12)",
   iconBgOrange: "rgba(245, 158, 11, 0.12)",
+  
+  // 兼容旧 API
+  surfaceTint: "rgba(124, 58, 237, 0.08)",
+  surface: "#FFFFFF",
+  background: "#FDFCFF",
 } as const;
 
 export const ManusSpacing = {
@@ -81,6 +86,9 @@ export const ManusRadius = {
   input: 16,
   pill: 999,
   avatar: 999,
+  // 兼容旧 API
+  sheet: 24,
+  control: 12,
 } as const;
 
 export const ManusShadow: ViewStyle = {
@@ -97,6 +105,15 @@ export const ManusGlowShadow: ViewStyle = {
   shadowOffset: { width: 0, height: 6 },
   shadowRadius: 20,
   elevation: 6,
+};
+
+// 兼容旧 API
+export const ManusEmphasisShadow: ViewStyle = {
+  shadowColor: "#7C3AED",
+  shadowOpacity: 0.15,
+  shadowOffset: { width: 0, height: 4 },
+  shadowRadius: 12,
+  elevation: 4,
 };
 
 export const ManusTypography = {
@@ -176,6 +193,13 @@ export const ManusTypography = {
   } satisfies TextStyle,
   // 小数字
   numericSm: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: ManusColors.text,
+  } satisfies TextStyle,
+  // Tab 文字（兼容旧 API）
+  tab: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "600",
