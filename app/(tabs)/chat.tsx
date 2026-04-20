@@ -12,40 +12,52 @@ import {
   Text,
   TextInput,
   View,
+  Dimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
   getMarketSnapshotByMcp,
   type MarketSnapshot,
-  type StoredWalletSnapshot,
 } from "@/lib/_core/api";
 
-const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// Design colors matching the mockup exactly
+// Purple gradient theme matching mockup
 const COLORS = {
-  bgStart: "#FFFFFF",
-  bgMid: "#F8F5FF",
-  bgEnd: "#F0EBFF",
-  primary: "#7C3AED",
-  primaryLight: "#A78BFA",
-  text: "#1F1F3D",
-  textSecondary: "#6B6B8D",
-  positive: "#10B981",
+  // Background gradients
+  bgTop: "#E8E0F0",
+  bgMid: "#DED4F0", 
+  bgBottom: "#D4C8F0",
+  
+  // Primary purple
+  primary: "#6B4EE6",
+  primaryDark: "#5A3DD6",
+  primaryLight: "#8B6FF0",
+  
+  // Text
+  text: "#2D1F4E",
+  textSecondary: "#7A6B9E",
+  textMuted: "#9B8FC0",
+  
+  // Accents
+  positive: "#22C55E",
   negative: "#EF4444",
   white: "#FFFFFF",
-  cardBg: "rgba(255,255,255,0.92)",
-  tabBg: "rgba(255,255,255,0.85)",
-  tabActive: "#7C3AED",
+  
+  // Glass effects
+  glassBg: "rgba(255,255,255,0.75)",
+  glassLight: "rgba(255,255,255,0.9)",
+  glassBorder: "rgba(255,255,255,0.6)",
+  purpleGlass: "rgba(107,78,230,0.08)",
 };
 
-// Quick action buttons matching the mockup
+// Quick actions with purple icons
 const QUICK_ACTIONS = [
-  { key: "finance", icon: "currency-usd", label: "理财", color: "#7C3AED" },
-  { key: "trade", icon: "chart-line", label: "交易", color: "#7C3AED" },
-  { key: "market", icon: "chart-bar", label: "行情", color: "#7C3AED" },
-  { key: "strategy", icon: "cog-outline", label: "策略", color: "#7C3AED" },
+  { key: "finance", icon: "currency-usd", label: "理财" },
+  { key: "trade", icon: "swap-horizontal", label: "交易" },
+  { key: "market", icon: "chart-bar", label: "行情" },
+  { key: "strategy", icon: "cog", label: "策略" },
 ];
 
 type PriceCardPayload = { snapshot: MarketSnapshot };
@@ -57,19 +69,18 @@ type ChatMessage = {
   card?: ChatCard;
 };
 
-const initialMessages: ChatMessage[] = [];
-
 function formatPrice(value: number) {
   if (value >= 1000) return `$ ${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   return `$ ${value.toFixed(4)}`;
 }
+
 function formatChange(change: number | null) {
   if (change === null || !Number.isFinite(change)) return "--";
   const percent = change * 100;
   return `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}%`;
 }
 
-// Price Card Component matching the mockup
+// Premium Price Card Component
 function PriceCard({ snapshot }: { snapshot: MarketSnapshot }) {
   const price = Number(snapshot.price) || 0;
   const change24h = snapshot.change24h;
@@ -80,54 +91,79 @@ function PriceCard({ snapshot }: { snapshot: MarketSnapshot }) {
 
   return (
     <View style={s.priceCard}>
+      {/* Glass effect background */}
+      <LinearGradient
+        colors={["rgba(255,255,255,0.95)", "rgba(248,245,255,0.9)"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      
       {/* Header */}
       <View style={s.priceCardHeader}>
         <View style={s.priceCardToken}>
-          <View style={s.tokenIconSmall}>
-            <MaterialCommunityIcons name="bitcoin" size={20} color="#F7931A" />
-          </View>
+          <LinearGradient colors={["#F7931A", "#FFAB40"]} style={s.tokenIcon}>
+            <MaterialCommunityIcons name="bitcoin" size={18} color={COLORS.white} />
+          </LinearGradient>
           <Text style={s.priceCardSymbol}>{snapshot.symbol}/USDT</Text>
         </View>
-        <View style={s.priceCardChart}>
-          <MaterialCommunityIcons name="chart-line" size={24} color={isPositive ? COLORS.positive : COLORS.negative} />
+        <View style={s.miniChart}>
+          <MaterialCommunityIcons 
+            name="chart-line" 
+            size={22} 
+            color={isPositive ? COLORS.positive : COLORS.negative} 
+          />
         </View>
-        <MaterialCommunityIcons name="star-outline" size={20} color={COLORS.primary} />
+        <View style={s.starBtn}>
+          <MaterialCommunityIcons name="star-four-points" size={18} color={COLORS.primary} />
+        </View>
       </View>
 
-      {/* Price */}
+      {/* Main Price */}
       <View style={s.priceCardMain}>
-        <Text style={s.priceCardValue}>{formatPrice(price)}</Text>
-        <View style={s.priceCardChange}>
-          <MaterialCommunityIcons name={isPositive ? "arrow-up" : "arrow-down"} size={16} color={isPositive ? COLORS.positive : COLORS.negative} />
-          <Text style={[s.priceCardChangeText, { color: isPositive ? COLORS.positive : COLORS.negative }]}>
+        <Text style={s.priceValue}>{formatPrice(price)}</Text>
+        <View style={s.priceChange}>
+          <MaterialCommunityIcons 
+            name={isPositive ? "arrow-top-right" : "arrow-bottom-right"} 
+            size={18} 
+            color={isPositive ? COLORS.positive : COLORS.negative} 
+          />
+          <Text style={[s.priceChangeText, { color: isPositive ? COLORS.positive : COLORS.negative }]}>
             {formatChange(change24h)} (24h)
           </Text>
         </View>
       </View>
 
-      {/* Stats */}
-      <View style={s.priceCardStats}>
-        <View style={s.priceCardStat}>
-          <Text style={s.priceCardStatLabel}>最高价 (High)</Text>
-          <Text style={s.priceCardStatValue}>$ {high.toLocaleString("en-US", { minimumFractionDigits: 2 })}</Text>
+      {/* Stats Row */}
+      <View style={s.statsRow}>
+        <View style={s.statItem}>
+          <Text style={s.statLabel}>最高价 (High)</Text>
+          <Text style={s.statValue}>$ {high.toLocaleString("en-US", { minimumFractionDigits: 2 })}</Text>
         </View>
-        <View style={s.priceCardStat}>
-          <Text style={s.priceCardStatLabel}>最低价 (Low)</Text>
-          <Text style={s.priceCardStatValue}>$ {low.toLocaleString("en-US", { minimumFractionDigits: 2 })}</Text>
+        <View style={s.statItem}>
+          <Text style={s.statLabel}>最低价 (Low)</Text>
+          <Text style={s.statValue}>$ {low.toLocaleString("en-US", { minimumFractionDigits: 2 })}</Text>
         </View>
-        <View style={s.priceCardStat}>
-          <Text style={s.priceCardStatLabel}>成交量 (Vol)</Text>
-          <Text style={s.priceCardStatValue}>{(volume / 1e9).toFixed(2)}B USDT</Text>
+        <View style={s.statItem}>
+          <Text style={s.statLabel}>成交量 (Vol)</Text>
+          <Text style={s.statValue}>{(volume / 1e9).toFixed(2)}B USDT</Text>
         </View>
       </View>
 
-      {/* Actions */}
-      <View style={s.priceCardActions}>
-        <Pressable style={s.priceCardBtn}>
-          <Text style={s.priceCardBtnText}>查看详情</Text>
+      {/* Action Buttons */}
+      <View style={s.cardActions}>
+        <Pressable style={s.cardBtnOutline}>
+          <Text style={s.cardBtnOutlineText}>查看详情</Text>
         </Pressable>
-        <Pressable style={[s.priceCardBtn, s.priceCardBtnPrimary]}>
-          <Text style={s.priceCardBtnPrimaryText}>立即交易</Text>
+        <Pressable style={s.cardBtnPrimary}>
+          <LinearGradient 
+            colors={[COLORS.primaryLight, COLORS.primary]} 
+            style={s.cardBtnGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Text style={s.cardBtnPrimaryText}>立即交易</Text>
+          </LinearGradient>
         </Pressable>
       </View>
     </View>
@@ -137,7 +173,7 @@ function PriceCard({ snapshot }: { snapshot: MarketSnapshot }) {
 export default function ChatScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"chat" | "community">("chat");
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
@@ -157,7 +193,6 @@ export default function ChatScreen() {
     setSubmitting(true);
 
     try {
-      // Check if asking for price
       const priceMatch = text.match(/(\bBTC\b|\bETH\b|\bSOL\b|比特币|以太坊)/i);
       if (priceMatch) {
         const symbolMap: Record<string, string> = { btc: "BTC", eth: "ETH", sol: "SOL", 比特币: "BTC", 以太坊: "ETH" };
@@ -194,29 +229,26 @@ export default function ChatScreen() {
       market: "BTC 价格",
       strategy: "设置 ETH 跌破 2200 提醒",
     };
-    if (prompts[key]) {
-      setInput(prompts[key]);
-    }
+    if (prompts[key]) setInput(prompts[key]);
   }, []);
 
   const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
     if (item.role === "user") {
       return (
-        <View style={s.userMsgRow}>
+        <View style={s.userRow}>
           <View style={s.userBubble}>
-            <Text style={s.userBubbleText}>{item.content}</Text>
+            <Text style={s.userText}>{item.content}</Text>
           </View>
         </View>
       );
     }
-
     return (
-      <View style={s.aiMsgRow}>
+      <View style={s.aiRow}>
         {item.card?.kind === "price" ? (
           <PriceCard snapshot={item.card.payload.snapshot} />
         ) : (
           <View style={s.aiBubble}>
-            <Text style={s.aiBubbleText}>{item.content}</Text>
+            <Text style={s.aiText}>{item.content}</Text>
           </View>
         )}
       </View>
@@ -224,42 +256,55 @@ export default function ChatScreen() {
   }, []);
 
   return (
-    <View style={s.root}>
-      <LinearGradient colors={[COLORS.bgStart, COLORS.bgMid, COLORS.bgEnd]} style={StyleSheet.absoluteFill} />
+    <View style={s.container}>
+      {/* Purple gradient background */}
+      <LinearGradient 
+        colors={[COLORS.bgTop, COLORS.bgMid, COLORS.bgBottom]} 
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
 
-      <SafeAreaView style={s.safe} edges={["top", "left", "right"]}>
-        {/* Header with tabs */}
+      <SafeAreaView style={s.safe} edges={["top"]}>
+        {/* Header */}
         <View style={s.header}>
-          <Pressable style={s.headerIcon} onPress={() => router.push("/(tabs)/wallet")}>
+          <Pressable style={s.headerBtn} onPress={() => router.push("/(tabs)/wallet")}>
             <MaterialCommunityIcons name="wallet-outline" size={22} color={COLORS.text} />
           </Pressable>
 
-          <View style={s.tabContainer}>
-            <Pressable style={[s.tab, activeTab === "chat" && s.tabActive]} onPress={() => setActiveTab("chat")}>
+          {/* Tab Switcher */}
+          <View style={s.tabSwitcher}>
+            <Pressable 
+              style={[s.tab, activeTab === "chat" && s.tabActive]} 
+              onPress={() => setActiveTab("chat")}
+            >
               <Text style={[s.tabText, activeTab === "chat" && s.tabTextActive]}>对话</Text>
             </Pressable>
-            <Pressable style={[s.tab, activeTab === "community" && s.tabActive]} onPress={() => setActiveTab("community")}>
+            <Pressable 
+              style={[s.tab, activeTab === "community" && s.tabActive]} 
+              onPress={() => setActiveTab("community")}
+            >
               <Text style={[s.tabText, activeTab === "community" && s.tabTextActive]}>社区</Text>
             </Pressable>
           </View>
 
-          <Pressable style={s.headerAvatar}>
-            <Image source={require("@/assets/images/hwallet-official-logo.png")} style={s.avatarImg} />
+          <Pressable style={s.headerAvatar} onPress={() => router.push("/(tabs)/profile")}>
+            <Image 
+              source={require("@/assets/images/hwallet-official-logo.png")} 
+              style={s.avatarImg} 
+            />
           </Pressable>
         </View>
 
-        {/* Chat content */}
-        <View style={s.chatContent}>
+        {/* Main Content */}
+        <View style={s.content}>
           {messages.length === 0 ? (
-            <View style={s.welcomeContainer}>
-              {/* Dolphin illustration */}
-              <View style={s.dolphinContainer}>
-                <Image
-                  source={require("@/assets/images/dolphin-mascot.jpg")}
-                  style={s.dolphinImage}
-                  resizeMode="contain"
-                />
-              </View>
+            <View style={s.emptyState}>
+              <Image
+                source={require("@/assets/images/dolphin-mascot.jpg")}
+                style={s.dolphinImg}
+                resizeMode="contain"
+              />
             </View>
           ) : (
             <FlatList
@@ -267,39 +312,48 @@ export default function ChatScreen() {
               data={messages}
               keyExtractor={(item) => item.id}
               renderItem={renderMessage}
-              contentContainerStyle={s.messageList}
+              contentContainerStyle={s.msgList}
               showsVerticalScrollIndicator={false}
             />
           )}
         </View>
 
-        {/* Bottom panel */}
-        <View style={s.bottomPanel}>
-          {/* Quick actions */}
+        {/* Bottom Section */}
+        <View style={s.bottomSection}>
+          {/* Quick Actions */}
           <View style={s.quickActions}>
             {QUICK_ACTIONS.map((action) => (
-              <Pressable key={action.key} style={s.quickBtn} onPress={() => handleQuickAction(action.key)}>
-                <View style={s.quickIconWrap}>
-                  <MaterialCommunityIcons name={action.icon as any} size={24} color={action.color} />
+              <Pressable 
+                key={action.key} 
+                style={s.quickAction}
+                onPress={() => handleQuickAction(action.key)}
+              >
+                <View style={s.quickIconBox}>
+                  <MaterialCommunityIcons name={action.icon as any} size={26} color={COLORS.primary} />
                 </View>
                 <Text style={s.quickLabel}>{action.label}</Text>
               </Pressable>
             ))}
           </View>
 
-          {/* Input */}
-          <View style={s.inputContainer}>
+          {/* Input Bar */}
+          <View style={s.inputBar}>
             <TextInput
               style={s.input}
               value={input}
               onChangeText={setInput}
               placeholder="输入消息..."
-              placeholderTextColor={COLORS.textSecondary}
+              placeholderTextColor={COLORS.textMuted}
               multiline
               maxLength={500}
             />
-            <Pressable style={s.sendBtn} onPress={handleSend} disabled={submitting}>
-              <LinearGradient colors={[COLORS.primaryLight, COLORS.primary]} style={s.sendBtnGradient}>
+            <Pressable onPress={handleSend} disabled={submitting}>
+              <LinearGradient 
+                colors={[COLORS.primaryLight, COLORS.primary]}
+                style={s.sendBtn}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
                 {submitting ? (
                   <ActivityIndicator color={COLORS.white} size="small" />
                 ) : (
@@ -315,7 +369,7 @@ export default function ChatScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  container: { flex: 1 },
   safe: { flex: 1 },
 
   // Header
@@ -326,34 +380,40 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
   },
-  headerIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.8)",
+  headerBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: COLORS.glassBg,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
   },
   headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.8)",
+    backgroundColor: COLORS.glassBg,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
   },
-  avatarImg: { width: 40, height: 40 },
+  avatarImg: { width: "100%", height: "100%" },
 
   // Tabs
-  tabContainer: {
+  tabSwitcher: {
     flexDirection: "row",
-    backgroundColor: COLORS.tabBg,
-    borderRadius: 20,
+    backgroundColor: COLORS.glassBg,
+    borderRadius: 24,
     padding: 4,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
   },
   tab: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 28,
     paddingVertical: 10,
-    borderRadius: 16,
+    borderRadius: 20,
   },
   tabActive: {
     backgroundColor: COLORS.primary,
@@ -367,165 +427,201 @@ const s = StyleSheet.create({
     color: COLORS.white,
   },
 
-  // Chat content
-  chatContent: { flex: 1 },
-  welcomeContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
-  dolphinContainer: {
-    width: 200,
-    height: 200,
+  // Content
+  content: { flex: 1 },
+  emptyState: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    paddingBottom: 100,
   },
-  dolphinImage: { width: 150, height: 150, opacity: 0.8 },
+  dolphinImg: {
+    width: 180,
+    height: 180,
+  },
 
   // Messages
-  messageList: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 },
-  userMsgRow: { alignItems: "flex-end", marginBottom: 16 },
+  msgList: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 },
+  userRow: { alignItems: "flex-end", marginBottom: 16 },
   userBubble: {
-    maxWidth: "80%",
-    backgroundColor: "rgba(255,255,255,0.9)",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+    maxWidth: "78%",
+    backgroundColor: COLORS.glassLight,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 22,
     borderBottomRightRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.12)",
+    borderColor: COLORS.glassBorder,
   },
-  userBubbleText: { fontSize: 15, color: COLORS.text, lineHeight: 22 },
-  aiMsgRow: { alignItems: "flex-start", marginBottom: 16 },
+  userText: { fontSize: 15, color: COLORS.text, lineHeight: 22 },
+  aiRow: { alignItems: "flex-start", marginBottom: 16 },
   aiBubble: {
     maxWidth: "85%",
-    backgroundColor: "rgba(255,255,255,0.85)",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
+    backgroundColor: COLORS.glassBg,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 22,
     borderBottomLeftRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
   },
-  aiBubbleText: { fontSize: 15, color: COLORS.text, lineHeight: 22 },
+  aiText: { fontSize: 15, color: COLORS.text, lineHeight: 22 },
 
   // Price Card
   priceCard: {
-    width: 280,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.08)",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    width: SCREEN_WIDTH - 80,
+    backgroundColor: COLORS.glassLight,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: "rgba(107,78,230,0.15)",
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 6,
+    overflow: "hidden",
   },
   priceCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
   },
   priceCardToken: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
     flex: 1,
   },
-  tokenIconSmall: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(247,147,26,0.12)",
+  tokenIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
   priceCardSymbol: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
     color: COLORS.text,
   },
-  priceCardChart: { marginRight: 8 },
-  priceCardMain: { marginTop: 12 },
-  priceCardValue: {
-    fontSize: 28,
+  miniChart: { marginRight: 12 },
+  starBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: COLORS.purpleGlass,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  priceCardMain: { marginTop: 16 },
+  priceValue: {
+    fontSize: 32,
     fontWeight: "800",
     color: COLORS.text,
     letterSpacing: -1,
   },
-  priceCardChange: {
+  priceChange: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 4,
+    marginTop: 6,
   },
-  priceCardChangeText: { fontSize: 14, fontWeight: "600" },
-  priceCardStats: {
+  priceChangeText: { fontSize: 15, fontWeight: "600" },
+  statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 16,
-    paddingTop: 12,
+    marginTop: 20,
+    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: "rgba(0,0,0,0.05)",
+    borderTopColor: "rgba(107,78,230,0.08)",
   },
-  priceCardStat: { alignItems: "center" },
-  priceCardStatLabel: { fontSize: 11, color: COLORS.textSecondary },
-  priceCardStatValue: { fontSize: 13, fontWeight: "600", color: COLORS.text, marginTop: 2 },
-  priceCardActions: {
+  statItem: { alignItems: "center" },
+  statLabel: { fontSize: 11, color: COLORS.textMuted, marginBottom: 4 },
+  statValue: { fontSize: 14, fontWeight: "700", color: COLORS.text },
+  cardActions: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 14,
+    gap: 12,
+    marginTop: 18,
   },
-  priceCardBtn: {
+  cardBtnOutline: {
     flex: 1,
-    height: 40,
-    borderRadius: 12,
+    height: 44,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.15)",
+    backgroundColor: COLORS.glassBg,
+    borderWidth: 1.5,
+    borderColor: "rgba(107,78,230,0.2)",
   },
-  priceCardBtnText: { fontSize: 14, fontWeight: "600", color: COLORS.textSecondary },
-  priceCardBtnPrimary: {
-    backgroundColor: COLORS.primary,
-    borderWidth: 0,
+  cardBtnOutlineText: { fontSize: 14, fontWeight: "600", color: COLORS.textSecondary },
+  cardBtnPrimary: {
+    flex: 1,
+    height: 44,
+    borderRadius: 14,
+    overflow: "hidden",
   },
-  priceCardBtnPrimaryText: { fontSize: 14, fontWeight: "600", color: COLORS.white },
+  cardBtnGradient: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cardBtnPrimaryText: { fontSize: 14, fontWeight: "700", color: COLORS.white },
 
-  // Bottom panel
-  bottomPanel: {
-    paddingTop: 12,
+  // Bottom Section
+  bottomSection: {
+    paddingTop: 16,
     paddingBottom: 34,
     paddingHorizontal: 16,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(124,58,237,0.06)",
   },
+
+  // Quick Actions
   quickActions: {
     flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 16,
+    justifyContent: "space-between",
+    marginBottom: 20,
   },
-  quickBtn: { alignItems: "center", gap: 6 },
-  quickIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: "rgba(124,58,237,0.08)",
+  quickAction: {
+    alignItems: "center",
+    gap: 8,
+  },
+  quickIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: COLORS.glassBg,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  quickLabel: { fontSize: 12, fontWeight: "600", color: COLORS.textSecondary },
+  quickLabel: { 
+    fontSize: 13, 
+    fontWeight: "600", 
+    color: COLORS.textSecondary,
+  },
 
-  // Input
-  inputContainer: {
+  // Input Bar
+  inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 10,
-    backgroundColor: "rgba(255,255,255,0.9)",
+    gap: 12,
+    backgroundColor: COLORS.glassLight,
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(124,58,237,0.1)",
-    paddingLeft: 18,
-    paddingRight: 5,
-    paddingVertical: 5,
+    borderColor: COLORS.glassBorder,
+    paddingLeft: 20,
+    paddingRight: 6,
+    paddingVertical: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
   input: {
     flex: 1,
@@ -534,11 +630,10 @@ const s = StyleSheet.create({
     paddingVertical: 10,
     maxHeight: 100,
   },
-  sendBtn: { borderRadius: 22, overflow: "hidden" },
-  sendBtnGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  sendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: "center",
     justifyContent: "center",
   },
