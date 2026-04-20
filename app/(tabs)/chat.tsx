@@ -32,6 +32,7 @@ import {
   getOnchainExecutionReceipt,
   parseChatAiIntent,
   parseDexSwapIntent,
+  previewOnchainSwap,
   searchDeFiProductsByMcp,
   getSmartMoneyLeaderboardByMcp,
   type AgentWalletAssetsResponse,
@@ -479,7 +480,7 @@ export default function ChatScreen() {
       parsedSwap = { amount: presetIntent.payload.amount, fromSymbol: presetIntent.payload.fromSymbol, toSymbol: presetIntent.payload.toSymbol, chainKind: presetIntent.payload.chainKind };
     } else {
       const parsed = await parseDexSwapIntent(content);
-      if (parsed.intent.action !== "swap") return [{ id: `assistant-${seed}-swap-unknown`, role: "assistant", content: "信息不完整，试试"把 100 USDT 换成 ETH"这种说法。", tone: "warning" }] satisfies ChatMessage[];
+      if (parsed.intent.action !== "swap") return [{ id: `assistant-${seed}-swap-unknown`, role: "assistant", content: "信息不完整，试试「把 100 USDT 换成 ETH」这种说法。", tone: "warning" }] satisfies ChatMessage[];
       parsedSwap = { amount: parsed.intent.amount, fromSymbol: parsed.intent.fromSymbol, toSymbol: parsed.intent.toSymbol, chainKind: parsed.intent.chainKind };
     }
     const chainKind = parsedSwap.chainKind ?? "evm";
