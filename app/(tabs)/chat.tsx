@@ -16,6 +16,8 @@ import {
 
 import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
+import { PremiumCard, CardListRow } from "@/components/PremiumCard";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 import { ManusColors, ManusRadius, ManusSpacing } from "@/constants/manus-ui";
 import { buildXLayerBuilderCodePayload } from "@/lib/builder-code";
@@ -409,6 +411,13 @@ export default function ChatScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState("");
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
+  
+  // 交易确认弹窗状态
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [confirmModalType, setConfirmModalType] = useState<"swap" | "transfer">("swap");
+  const [confirmModalLoading, setConfirmModalLoading] = useState(false);
+  const [pendingSwapPayload, setPendingSwapPayload] = useState<SwapCardPayload | null>(null);
+  const [pendingTransferPayload, setPendingTransferPayload] = useState<TransferCardPayload | null>(null);
 
   const incomingQuery = typeof params.q === "string" ? params.q.trim() : "";
   const isFromCommunity = params.source === "community" && incomingQuery.length > 0;
@@ -692,9 +701,39 @@ export default function ChatScreen() {
     void sendMessage(entryText);
   }, [params.draft, params.draftKey, params.q, params.source, sendMessage]);
 
-  /* ══════════════════════════════════════════════════════════════
+  /* ════════════════════════════════════════��═════════════════════
    *  RENDER — Grok-style minimal chat with rich inline cards
    * ══════════════════════════════════════════════════════════════ */
+
+  // 打开交易确认弹窗
+  const openSwapConfirm = useCallback((payload: SwapCardPayload) => {
+    setPendingSwapPayload(payload);
+    setConfirmModalType("swap");
+    setConfirmModalVisible(true);
+  }, []);
+
+  const openTransferConfirm = useCallback((payload: TransferCardPayload) => {
+    setPendingTransferPayload(payload);
+    setConfirmModalType("transfer");
+    setConfirmModalVisible(true);
+  }, []);
+
+  // 确认执行交易
+  const confirmTransaction = useCallback(async () => {
+    setConfirmModalLoading(true);
+    try {
+      if (confirmModalType === "swap" && pendingSwapPayload) {
+        await handleSwapSignature(pendingSwapPayload);
+      } else if (confirmModalType === "transfer" && pendingTransferPayload) {
+        await handleTransferSignature(pendingTransferPayload);
+      }
+      setConfirmModalVisible(false);
+    } catch (err) {
+      console.warn("[confirmTransaction] error:", err);
+    } finally {
+      setConfirmModalLoading(false);
+    }
+  }, [confirmModalType, pendingSwapPayload, pendingTransferPayload, handleSwapSignature, handleTransferSignature]);
 
   const renderCard = useCallback((card: ChatCard) => {
     switch (card.kind) {
@@ -702,181 +741,160 @@ export default function ChatScreen() {
         const s = card.payload.snapshot;
         const isUp = (s.change24h ?? 0) >= 0;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.price.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.price.accent }]} />
-              <Text style={styles.cardLabel}>{s.symbol}</Text>
-              <Text style={[styles.cardBadge, { color: isUp ? POSITIVE : NEGATIVE }]}>{formatChange(s.change24h)}</Text>
-            </View>
-            <Text style={styles.cardHero}>{formatPrice(s.price)}</Text>
-            <View style={styles.cardMetaRow}>
-              <Text style={styles.cardMeta}>{"24h 量 "}{formatVolume(s.volume24h)}</Text>
-              <Text style={styles.cardMeta}>{formatSnapshotTime(s.updateTime)}</Text>
-            </View>
-            <View style={styles.cardActions}>
-              <Pressable style={styles.cardBtn} onPress={() => void sendMessage(`最近大户在买什么 ${s.symbol}`)}>
-                <Text style={styles.cardBtnText}>大户动向</Text>
-              </Pressable>
-              <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void sendMessage(`把 100 USDT 换成 ${s.symbol}`)}>
-                <Text style={styles.cardBtnPrimaryText}>买入</Text>
-              </Pressable>
-            </View>
-          </View>
+          <PremiumCard
+            variant="price"
+            title={s.symbol}
+            subtitle={`24h 量 ${formatVolume(s.volume24h)}`}
+            badge={{ text: formatChange(s.change24h), positive: isUp }}
+            heroValue={formatPrice(s.price)}
+            actions={[
+              { label: "大户动向", onPress: () => void sendMessage(`最近大户在买什么 ${s.symbol}`) },
+              { label: "买入", primary: true, onPress: () => void sendMessage(`把 100 USDT 换成 ${s.symbol}`) },
+            ]}
+          />
         );
       }
       case "asset": {
         const a = card.payload.assets;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.asset.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.asset.accent }]} />
-              <Text style={styles.cardLabel}>资产总览</Text>
-            </View>
-            <Text style={styles.cardHero}>{formatUsdCompact(Number(a.totalAssetValue))}</Text>
+          <PremiumCard
+            variant="asset"
+            title="资产总览"
+            subtitle="Agent Wallet"
+            heroValue={formatUsdCompact(Number(a.totalAssetValue))}
+            actions={[
+              { label: "资产明细", onPress: () => router.push("/(tabs)/wallet") },
+              { label: "市场机会", primary: true, onPress: () => void sendMessage("最近大户在买什么") },
+            ]}
+          >
             {a.walletAddresses.slice(0, 3).map((chain) => {
               const chainTotal = chain.assets.reduce((sum, asset) => sum + Number(asset.valueUsd || 0), 0);
               return (
-                <View key={`${chain.chainIndex}-${chain.address}`} style={styles.listRow}>
-                  <View>
-                    <Text style={styles.listTitle}>{chain.chainName}</Text>
-                    <Text style={styles.listSub}>{maskAddress(chain.address)}</Text>
-                  </View>
-                  <Text style={styles.listValue}>{formatUsdCompact(chainTotal)}</Text>
-                </View>
+                <CardListRow
+                  key={`${chain.chainIndex}-${chain.address}`}
+                  title={chain.chainName}
+                  subtitle={maskAddress(chain.address)}
+                  value={formatUsdCompact(chainTotal)}
+                />
               );
             })}
-            <View style={styles.cardActions}>
-              <Pressable style={styles.cardBtn} onPress={() => router.push("/(tabs)/wallet")}>
-                <Text style={styles.cardBtnText}>资产明细</Text>
-              </Pressable>
-              <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void sendMessage("最近大户在买什么")}>
-                <Text style={styles.cardBtnPrimaryText}>市场机会</Text>
-              </Pressable>
-            </View>
-          </View>
+          </PremiumCard>
         );
       }
       case "defi": {
         const d = card.payload;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.defi.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.defi.accent }]} />
-              <Text style={styles.cardLabel}>{d.token} 赚币</Text>
-            </View>
+          <PremiumCard
+            variant="defi"
+            title={`${d.token} 赚币`}
+            subtitle="DeFi 理财产品"
+            actions={[
+              { label: "查看更多", primary: true, onPress: () => void sendMessage(`继续找 ${d.token} 的赚币产品`) },
+            ]}
+          >
             {d.products.slice(0, 3).map((p) => (
-              <View key={p.id} style={styles.listRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.listTitle}>{p.name}</Text>
-                  <Text style={styles.listSub}>{p.platform} · {p.chain}</Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={[styles.listValue, { color: POSITIVE }]}>{p.apr.toFixed(2)}%</Text>
-                  <Text style={styles.listSub}>TVL {formatUsdCompact(Number(p.tvl || 0))}</Text>
-                </View>
-              </View>
+              <CardListRow
+                key={p.id}
+                title={p.name}
+                subtitle={`${p.platform} · ${p.chain}`}
+                value={`${p.apr.toFixed(2)}%`}
+                valueColor={POSITIVE}
+                valueSub={`TVL ${formatUsdCompact(Number(p.tvl || 0))}`}
+              />
             ))}
-            <Pressable style={[styles.cardBtn, styles.cardBtnPrimary, { alignSelf: "stretch" }]} onPress={() => void sendMessage(`继续找 ${d.token} 的赚币产品`)}>
-              <Text style={styles.cardBtnPrimaryText}>查看更多</Text>
-            </Pressable>
-          </View>
+          </PremiumCard>
         );
       }
       case "smart-money": {
         const sm = card.payload;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.smartMoney.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.smartMoney.accent }]} />
-              <Text style={styles.cardLabel}>聪明钱榜单</Text>
-            </View>
+          <PremiumCard
+            variant="smartMoney"
+            title="聪明钱榜单"
+            subtitle="高胜率交易者"
+            actions={[
+              { label: "热门 Meme", primary: true, onPress: () => void sendMessage("最近有什么热门Meme币") },
+            ]}
+          >
             {sm.wallets.slice(0, 3).map((w, i) => (
-              <View key={`${w.walletAddress}-${i}`} style={styles.listRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.listTitle}>#{i + 1} {maskAddress(w.walletAddress)}</Text>
-                  <Text style={styles.listSub}>胜率 {Number(w.winRatePercent || 0).toFixed(1)}% · 交易 {w.txs}</Text>
-                </View>
-                <Text style={[styles.listValue, { color: POSITIVE }]}>{formatUsdCompact(Number(w.realizedPnlUsd || 0))}</Text>
-              </View>
+              <CardListRow
+                key={`${w.walletAddress}-${i}`}
+                rank={i + 1}
+                title={maskAddress(w.walletAddress)}
+                subtitle={`胜率 ${Number(w.winRatePercent || 0).toFixed(1)}% · 交易 ${w.txs}`}
+                value={formatUsdCompact(Number(w.realizedPnlUsd || 0))}
+                valueColor={POSITIVE}
+              />
             ))}
-            <Pressable style={[styles.cardBtn, styles.cardBtnPrimary, { alignSelf: "stretch" }]} onPress={() => void sendMessage("最近有什么热门Meme币")}>
-              <Text style={styles.cardBtnPrimaryText}>热门 Meme</Text>
-            </Pressable>
-          </View>
+          </PremiumCard>
         );
       }
       case "meme": {
         const m = card.payload;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.meme.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.meme.accent }]} />
-              <Text style={styles.cardLabel}>热门 Meme</Text>
-            </View>
+          <PremiumCard
+            variant="meme"
+            title="热门 Meme"
+            subtitle="聪明钱关注"
+            actions={[
+              { label: "刷新榜单", primary: true, onPress: () => void sendMessage("刷新热门Meme币") },
+            ]}
+          >
             {m.tokens.slice(0, 3).map((t, i) => (
-              <View key={`${t.tokenContractAddress}-${i}`} style={styles.listRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.listTitle}>{t.tokenSymbol}</Text>
-                  <Text style={styles.listSub}>持币 {t.holders || "--"} · 聪明钱 {t.smartMoneyBuys || "0"}</Text>
-                </View>
-                <Text style={[styles.listValue, { color: CARD_TINTS.meme.accent }]}>{formatUsdCompact(Number(t.marketCap || 0))}</Text>
-              </View>
+              <CardListRow
+                key={`${t.tokenContractAddress}-${i}`}
+                rank={i + 1}
+                title={t.tokenSymbol}
+                subtitle={`持币 ${t.holders || "--"} · 聪明钱 ${t.smartMoneyBuys || "0"}`}
+                value={formatUsdCompact(Number(t.marketCap || 0))}
+              />
             ))}
-          </View>
+          </PremiumCard>
         );
       }
       case "swap": {
         const sc = card.payload;
+        const isAwaiting = sc.phase === "awaiting_confirmation" && sc.signatureRequest;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.swap.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.swap.accent }]} />
-              <Text style={styles.cardLabel}>{sc.fromSymbol} → {sc.toSymbol}</Text>
-              <Text style={[styles.cardBadge, { color: CARD_TINTS.swap.accent }]}>{sc.chainKind === "solana" ? "Solana" : "Ethereum"}</Text>
-            </View>
-            <Text style={styles.cardHero}>{sc.amount} {sc.fromSymbol}</Text>
-            <View style={styles.cardMetaRow}>
-              <Text style={styles.cardMeta}>预估 {sc.estimatedReceive} {sc.toSymbol}</Text>
-              <Text style={styles.cardMeta}>{sc.estimatedPrice}</Text>
-            </View>
-            <View style={styles.cardActions}>
-              <Pressable style={styles.cardBtn} onPress={() => router.push("/(tabs)/wallet")}>
-                <Text style={styles.cardBtnText}>钱包明细</Text>
-              </Pressable>
-              {sc.phase === "awaiting_confirmation" && sc.signatureRequest ? (
-                <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void handleSwapSignature(sc)}>
-                  <Text style={styles.cardBtnPrimaryText}>确认执行</Text>
-                </Pressable>
-              ) : (
-                <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => router.push("/(tabs)/wallet")}>
-                  <Text style={styles.cardBtnPrimaryText}>查看结果</Text>
-                </Pressable>
-              )}
-            </View>
-          </View>
+          <PremiumCard
+            variant="swap"
+            title={`${sc.fromSymbol} → ${sc.toSymbol}`}
+            subtitle={sc.chainKind === "solana" ? "Solana 网络" : "Ethereum 网络"}
+            heroValue={sc.amount}
+            heroSuffix={sc.fromSymbol}
+            actions={[
+              { label: "钱包明细", onPress: () => router.push("/(tabs)/wallet") },
+              isAwaiting
+                ? { label: "确认执行", primary: true, onPress: () => openSwapConfirm(sc) }
+                : { label: "查看结果", primary: true, onPress: () => router.push("/(tabs)/wallet") },
+            ]}
+          >
+            <CardListRow title="预估获得" value={`${sc.estimatedReceive} ${sc.toSymbol}`} valueColor={POSITIVE} />
+            <CardListRow title="兑换比率" value={sc.estimatedPrice} />
+            <CardListRow title="滑点容差" value={sc.slippage + "%"} />
+          </PremiumCard>
         );
       }
       case "transfer": {
         const tc = card.payload;
         return (
-          <View style={[styles.card, { backgroundColor: CARD_TINTS.transfer.bg }]}>
-            <View style={styles.cardHead}>
-              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.transfer.accent }]} />
-              <Text style={styles.cardLabel}>转账 {tc.amount} {tc.symbol}</Text>
-            </View>
-            <View style={styles.cardMetaRow}>
-              <Text style={styles.cardMeta}>{maskAddress(tc.fromAddress)} → {maskAddress(tc.toAddress)}</Text>
-            </View>
-            <View style={styles.cardActions}>
-              <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void handleTransferSignature(tc)}>
-                <Text style={styles.cardBtnPrimaryText}>确认执行</Text>
-              </Pressable>
-            </View>
-          </View>
+          <PremiumCard
+            variant="transfer"
+            title={`转账 ${tc.amount} ${tc.symbol}`}
+            subtitle={tc.chainKind === "solana" ? "Solana 网络" : "Ethereum 网络"}
+            heroValue={tc.amount}
+            heroSuffix={tc.symbol}
+            actions={[
+              { label: "确认转账", primary: true, onPress: () => openTransferConfirm(tc) },
+            ]}
+          >
+            <CardListRow title="发送地址" value={maskAddress(tc.fromAddress)} />
+            <CardListRow title="接收地址" value={maskAddress(tc.toAddress)} />
+          </PremiumCard>
         );
       }
     }
-  }, [handleSwapSignature, handleTransferSignature, router, sendMessage]);
+  }, [handleSwapSignature, handleTransferSignature, openSwapConfirm, openTransferConfirm, router, sendMessage]);
 
   const quickActions = [
     { key: "earn", label: "理财", icon: "cash-multiple" as const, query: "赚币产品" },
@@ -1022,6 +1040,30 @@ export default function ChatScreen() {
           </View>
         </View>
       </ScreenContainer>
+
+      {/* 交易确认弹窗 */}
+      <ConfirmModal
+        visible={confirmModalVisible}
+        type={confirmModalType}
+        loading={confirmModalLoading}
+        swapDetails={pendingSwapPayload ? {
+          fromAmount: pendingSwapPayload.amount,
+          fromSymbol: pendingSwapPayload.fromSymbol,
+          toAmount: pendingSwapPayload.estimatedReceive,
+          toSymbol: pendingSwapPayload.toSymbol,
+          rate: pendingSwapPayload.estimatedPrice,
+          slippage: pendingSwapPayload.slippage + "%",
+          route: pendingSwapPayload.routeLabel,
+        } : undefined}
+        transferDetails={pendingTransferPayload ? {
+          amount: pendingTransferPayload.amount,
+          symbol: pendingTransferPayload.symbol,
+          toAddress: pendingTransferPayload.toAddress,
+          network: pendingTransferPayload.chainKind === "solana" ? "Solana" : "Ethereum",
+        } : undefined}
+        onConfirm={confirmTransaction}
+        onCancel={() => setConfirmModalVisible(false)}
+      />
     </View>
   );
 }
