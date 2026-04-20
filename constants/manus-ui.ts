@@ -1,46 +1,60 @@
 import type { TextStyle, ViewStyle } from "react-native";
 
-/* ─────────────────────────────────────────────
- * Dolphin Design System v2 — Pure White + Purple
- * Grok-inspired minimal chat-first aesthetic
- * ───────────────────────────────────────────── */
+/**
+ * H Wallet Design System v3
+ * 淡紫渐变背景 + 玻璃态卡片 + 精致质感
+ */
 
 export const ManusColors = {
-  /* Backgrounds */
-  background: "#FFFFFF",
-  surface: "#FFFFFF",
-  surfaceAlt: "#F8F7FC",
-  surfaceTint: "#F3F0FF",
-  glass: "rgba(255,255,255,0.88)",
-
-  /* Brand */
+  // 背景渐变
+  bgGradientStart: "#F8F5FF",
+  bgGradientMid: "#EDE9FE", 
+  bgGradientEnd: "#E0E7FF",
+  
+  // 玻璃态
+  glass: "rgba(255, 255, 255, 0.85)",
+  glassBorder: "rgba(255, 255, 255, 0.6)",
+  glassLight: "rgba(255, 255, 255, 0.95)",
+  glassOverlay: "rgba(255, 255, 255, 0.7)",
+  
+  // 品牌紫
   primary: "#7C3AED",
   primaryLight: "#A78BFA",
+  primaryDark: "#6D28D9",
   primarySoft: "#EDE9FE",
-
-  /* Text */
-  text: "#111827",
+  
+  // 文字
+  text: "#1F1F3D",
   textSecondary: "#6B7280",
   muted: "#9CA3AF",
-  tabMuted: "#D1D5DB",
-
-  /* Status */
+  textOnPrimary: "#FFFFFF",
+  
+  // 状态色
   success: "#10B981",
+  successSoft: "#D1FAE5",
   danger: "#EF4444",
+  dangerSoft: "#FEE2E2",
   warning: "#F59E0B",
-
-  /* Borders & Shadows */
-  divider: "rgba(0,0,0,0.06)",
-  shadow: "rgba(0,0,0,0.08)",
-
-  /* Card accent tints (each card type gets a unique tint) */
-  cardPrice: "#7C3AED",     // purple
-  cardAsset: "#3B82F6",     // blue
-  cardDefi: "#10B981",      // green
-  cardSmartMoney: "#F59E0B",// amber
-  cardMeme: "#EC4899",      // pink
-  cardSwap: "#06B6D4",      // cyan
-  cardTransfer: "#8B5CF6",  // violet
+  warningSoft: "#FEF3C7",
+  
+  // 卡片点缀色
+  cardPurple: "rgba(124, 58, 237, 0.1)",
+  cardBlue: "rgba(59, 130, 246, 0.1)",
+  cardGreen: "rgba(16, 185, 129, 0.1)",
+  cardOrange: "rgba(245, 158, 11, 0.1)",
+  cardPink: "rgba(236, 72, 153, 0.1)",
+  cardCyan: "rgba(6, 182, 212, 0.1)",
+  
+  // 边框
+  border: "rgba(124, 58, 237, 0.1)",
+  borderLight: "rgba(255, 255, 255, 0.4)",
+  divider: "rgba(0, 0, 0, 0.06)",
+  
+  // 图标背景色
+  iconBgPurple: "rgba(124, 58, 237, 0.12)",
+  iconBgBlue: "rgba(59, 130, 246, 0.12)",
+  iconBgGreen: "rgba(16, 185, 129, 0.12)",
+  iconBgOrange: "rgba(245, 158, 11, 0.12)",
 } as const;
 
 export const ManusSpacing = {
@@ -57,100 +71,130 @@ export const ManusSpacing = {
 } as const;
 
 export const ManusRadius = {
-  xs: 8,
-  sm: 12,
+  xs: 6,
+  sm: 10,
+  md: 14,
+  lg: 18,
+  xl: 22,
   card: 20,
-  control: 16,
-  input: 24,
   button: 14,
+  input: 16,
   pill: 999,
-  tag: 12,
   avatar: 999,
-  sheet: 24,
 } as const;
 
 export const ManusShadow: ViewStyle = {
-  shadowColor: "#000",
-  shadowOpacity: 0.04,
-  shadowOffset: { width: 0, height: 2 },
-  shadowRadius: 8,
-  elevation: 2,
+  shadowColor: "#7C3AED",
+  shadowOpacity: 0.08,
+  shadowOffset: { width: 0, height: 4 },
+  shadowRadius: 12,
+  elevation: 3,
 };
 
-export const ManusEmphasisShadow: ViewStyle = {
+export const ManusGlowShadow: ViewStyle = {
   shadowColor: "#7C3AED",
-  shadowOpacity: 0.15,
-  shadowOffset: { width: 0, height: 4 },
-  shadowRadius: 16,
-  elevation: 4,
+  shadowOpacity: 0.2,
+  shadowOffset: { width: 0, height: 6 },
+  shadowRadius: 20,
+  elevation: 6,
 };
 
 export const ManusTypography = {
-  heroTitle: {
-    fontSize: 32,
-    lineHeight: 38,
+  // 大金额
+  heroAmount: {
+    fontSize: 36,
+    lineHeight: 44,
     fontWeight: "700",
-    letterSpacing: -0.8,
+    letterSpacing: -1,
     color: ManusColors.text,
   } satisfies TextStyle,
+  // 品牌标题
   brandTitle: {
-    fontSize: 28,
-    lineHeight: 34,
-    fontWeight: "700",
-    letterSpacing: -0.6,
-    color: ManusColors.text,
-  } satisfies TextStyle,
-  pageTitle: {
     fontSize: 24,
-    lineHeight: 30,
+    lineHeight: 32,
     fontWeight: "700",
     letterSpacing: -0.5,
     color: ManusColors.text,
   } satisfies TextStyle,
-  sectionTitle: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "600",
-    letterSpacing: -0.2,
+  // 页面标题
+  pageTitle: {
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: "700",
+    letterSpacing: -0.3,
     color: ManusColors.text,
   } satisfies TextStyle,
+  // 区块标题
+  sectionTitle: {
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: "600",
+    color: ManusColors.text,
+  } satisfies TextStyle,
+  // 卡片标题
+  cardTitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "600",
+    color: ManusColors.text,
+  } satisfies TextStyle,
+  // 正文
   body: {
     fontSize: 15,
     lineHeight: 22,
     fontWeight: "400",
     color: ManusColors.text,
   } satisfies TextStyle,
+  // 辅助文字
   secondary: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "400",
+    fontWeight: "500",
     color: ManusColors.textSecondary,
   } satisfies TextStyle,
+  // 小标签
   caption: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "500",
     color: ManusColors.muted,
   } satisfies TextStyle,
+  // 按钮文字
   button: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
     fontWeight: "600",
-    letterSpacing: -0.1,
-    color: "#FFFFFF",
+    color: ManusColors.textOnPrimary,
   } satisfies TextStyle,
-  tab: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "600",
-    letterSpacing: -0.1,
-    color: ManusColors.text,
-  } satisfies TextStyle,
-  numericHero: {
-    fontSize: 28,
-    lineHeight: 34,
+  // 数字
+  numeric: {
+    fontSize: 18,
+    lineHeight: 26,
     fontWeight: "700",
-    letterSpacing: -0.8,
+    letterSpacing: -0.3,
     color: ManusColors.text,
   } satisfies TextStyle,
+  // 小数字
+  numericSm: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: ManusColors.text,
+  } satisfies TextStyle,
+} as const;
+
+// 玻璃卡片样式
+export const GlassCardStyle: ViewStyle = {
+  backgroundColor: ManusColors.glass,
+  borderRadius: ManusRadius.card,
+  borderWidth: 1,
+  borderColor: ManusColors.glassBorder,
+  ...ManusShadow,
+};
+
+// 渐变预设
+export const GradientPresets = {
+  background: [ManusColors.bgGradientStart, ManusColors.bgGradientMid, ManusColors.bgGradientEnd],
+  primaryButton: [ManusColors.primary, ManusColors.primaryDark],
+  purpleCard: ["#8B5CF6", "#7C3AED"],
 } as const;
