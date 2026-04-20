@@ -1,7 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "mkdir -p node_modules/react-native-css-interop/.cache && touch node_modules/react-native-css-interop/.cache/web.css && npx expo export --platform web --output-dir .vercel-static",
+  "buildCommand": "mkdir -p node_modules/react-native-css-interop/.cache && touch node_modules/react-native-css-interop/.cache/web.css && npx expo export --platform web --output-dir public",
+  "outputDirectory": "public",
   "rewrites": [
-    { "source": "/((?!api|_expo|assets|favicon).*)", "destination": "/.vercel-static/index.html" }
+    { "source": "/((?!api|_expo|assets|favicon).*)", "destination": "/index.html" }
   ]
 }
