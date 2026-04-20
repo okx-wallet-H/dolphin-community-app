@@ -145,9 +145,9 @@ function setCors(res: ServerlessResponse, req?: ServerlessRequest) {
 
 function getCredential(name: "OKX_API_KEY" | "OKX_SECRET_KEY" | "OKX_PASSPHRASE") {
   const envNames: Record<typeof name, string[]> = {
-    OKX_API_KEY: ["OKX_API_KEY", "OKX_DEX_API_KEY", "OKX_ONCHAIN_API_KEY"],
-    OKX_SECRET_KEY: ["OKX_SECRET_KEY", "OKX_DEX_SECRET_KEY", "OKX_ONCHAIN_SECRET_KEY"],
-    OKX_PASSPHRASE: ["OKX_PASSPHRASE", "OKX_DEX_PASSPHRASE", "OKX_ONCHAIN_PASSPHRASE"],
+    OKX_API_KEY: ["OKX_API_KEY", "OKX_DEX_API_KEY", "OKX_ONCHAIN_API_KEY", "OKX_ACCESS_KEY"],
+    OKX_SECRET_KEY: ["OKX_SECRET_KEY", "OKX_API_SECRET", "OKX_DEX_SECRET_KEY", "OKX_ONCHAIN_SECRET_KEY", "OKX_ACCESS_SECRET"],
+    OKX_PASSPHRASE: ["OKX_PASSPHRASE", "OKX_API_PASSPHRASE", "OKX_DEX_PASSPHRASE", "OKX_ONCHAIN_PASSPHRASE", "OKX_ACCESS_PASSPHRASE"],
   };
 
   for (const envName of envNames[name]) {
@@ -205,14 +205,19 @@ function buildRestHeaders(method: "GET" | "POST", requestPath: string, body = ""
   if (!passphrase) throw new Error("缺少 OKX_PASSPHRASE 环境变量");
 
   const timestamp = new Date().toISOString();
+  const projectId = (process.env.OKX_PROJECT_ID || process.env.OKX_ACCESS_PROJECT || "").trim();
 
-  return {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "OK-ACCESS-KEY": apiKey,
     "OK-ACCESS-SIGN": sign(secretKey, timestamp, method, requestPath, body),
     "OK-ACCESS-PASSPHRASE": passphrase,
     "OK-ACCESS-TIMESTAMP": timestamp,
   };
+  if (projectId) {
+    headers["OK-ACCESS-PROJECT"] = projectId;
+  }
+  return headers;
 }
 
 function buildUpstreamMcpHeaders() {
