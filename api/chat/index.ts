@@ -72,7 +72,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { user } = authenticateRequest(req);
+    // Try authentication but allow anonymous access for chat
+    let userOpenId = 'anonymous';
+    try {
+      const { user } = authenticateRequest(req);
+      userOpenId = user.openId;
+    } catch {
+      // Allow anonymous chat - no authentication required
+    }
+
     const body = parseBody(req);
     const message = typeof body.message === 'string' ? body.message.trim() : '';
     const wallet = parseWallet(body.wallet);
@@ -84,19 +92,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const intent = await getChatAiIntent(message, wallet);
     return res.status(200).json(
       toSuccessEnvelope({
-        user: { openId: user.openId },
+        user: { openId: userOpenId },
         mockMode: intent.mockMode,
         intent,
       }),
     );
   } catch (error) {
-    const message = toErrorMessage(error);
-    const status = /UNAUTHORIZED|TOKEN/i.test(message) ? 401 : 400;
-    return res.status(status).json({
-      code: String(status),
-      msg: message,
+    const msg = toErrorMessage(error);
+    return res.status(400).json({
+      code: '400',
+      msg,
       success: false,
-      error: message,
+      error: msg,
     });
   }
 }

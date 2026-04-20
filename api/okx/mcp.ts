@@ -70,9 +70,9 @@ const OKX_MCP_URLS = [
   "https://www.okx.com/api/v5/dex/mcp",
 ].filter((value): value is string => Boolean(value));
 
-const DEFAULT_OKX_API_KEY = "39b84d18-8693-4554-9a37-170cbc7a5812";
-const DEFAULT_OKX_SECRET_KEY = "A07D90C0C2A85CE957A1619D8DA38E20";
-const DEFAULT_OKX_PASSPHRASE = "Yy133678.";
+const DEFAULT_OKX_API_KEY = "";
+const DEFAULT_OKX_SECRET_KEY = "";
+const DEFAULT_OKX_PASSPHRASE = "";
 const REQUEST_TIMEOUT_MS = Number(process.env.OKX_REQUEST_TIMEOUT_MS ?? 15000);
 
 const LOCAL_TOOL_DEFINITIONS: ToolDefinition[] = [

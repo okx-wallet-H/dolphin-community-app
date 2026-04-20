@@ -117,11 +117,11 @@ export default function LoginRoute() {
         const token = await getSessionToken();
         if (!token) return;
         const cachedUser = await getUserInfo();
-        if (cachedUser) { router.replace("/(tabs)/wallet"); return; }
+        if (cachedUser) { router.replace("/(tabs)/chat"); return; }
         const currentUser = await getMe();
         if (currentUser) {
           await setUserInfo({ ...currentUser, lastSignedIn: new Date(currentUser.lastSignedIn) });
-          router.replace("/(tabs)/wallet");
+          router.replace("/(tabs)/chat");
           return;
         }
         await removeSessionToken();
