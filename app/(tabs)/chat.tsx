@@ -17,7 +17,7 @@ import {
 import { AppHeader } from "@/components/AppHeader";
 import { ScreenContainer } from "@/components/screen-container";
 
-import { ManusColors, ManusEmphasisShadow, ManusRadius, ManusShadow, ManusSpacing, ManusTypography } from "@/constants/manus-ui";
+import { ManusColors, ManusRadius, ManusSpacing } from "@/constants/manus-ui";
 import { buildXLayerBuilderCodePayload } from "@/lib/builder-code";
 import {
   buildConfirmCard,
@@ -32,7 +32,6 @@ import {
   getOnchainExecutionReceipt,
   parseChatAiIntent,
   parseDexSwapIntent,
-  previewOnchainSwap,
   searchDeFiProductsByMcp,
   getSmartMoneyLeaderboardByMcp,
   type AgentWalletAssetsResponse,
@@ -55,15 +54,24 @@ import {
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
 const EVM_NATIVE = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const SOL_NATIVE = "So11111111111111111111111111111111111111112";
-const POSITIVE = "#16A34A";
-const NEGATIVE = "#DC2626";
+const POSITIVE = "#10B981";
+const NEGATIVE = "#EF4444";
 const SIGNATURE_PORTAL_URL = (
   process.env.EXPO_PUBLIC_SIGNATURE_PORTAL_URL ??
   process.env.EXPO_PUBLIC_OKX_WALLET_SIGN_URL ??
   ""
 ).trim();
 
-
+/* ── Card accent colors (each card type uses a unique tint) ── */
+const CARD_TINTS = {
+  price:      { bg: "#FAF5FF", accent: "#7C3AED", icon: "#7C3AED" },
+  asset:      { bg: "#EFF6FF", accent: "#3B82F6", icon: "#3B82F6" },
+  defi:       { bg: "#ECFDF5", accent: "#10B981", icon: "#10B981" },
+  smartMoney: { bg: "#FFFBEB", accent: "#F59E0B", icon: "#F59E0B" },
+  meme:       { bg: "#FDF2F8", accent: "#EC4899", icon: "#EC4899" },
+  swap:       { bg: "#ECFEFF", accent: "#06B6D4", icon: "#06B6D4" },
+  transfer:   { bg: "#F5F3FF", accent: "#8B5CF6", icon: "#8B5CF6" },
+} as const;
 
 type PriceCardPayload = {
   snapshot: MarketSnapshot;
@@ -120,34 +128,13 @@ type TransferCardPayload = {
 };
 
 type ChatCard =
-  | {
-      kind: "price";
-      payload: PriceCardPayload;
-    }
-  | {
-      kind: "asset";
-      payload: AssetCardPayload;
-    }
-  | {
-      kind: "defi";
-      payload: DeFiCardPayload;
-    }
-  | {
-      kind: "smart-money";
-      payload: SmartMoneyCardPayload;
-    }
-  | {
-      kind: "meme";
-      payload: MemeCardPayload;
-    }
-  | {
-      kind: "swap";
-      payload: SwapCardPayload;
-    }
-  | {
-      kind: "transfer";
-      payload: TransferCardPayload;
-    };
+  | { kind: "price"; payload: PriceCardPayload }
+  | { kind: "asset"; payload: AssetCardPayload }
+  | { kind: "defi"; payload: DeFiCardPayload }
+  | { kind: "smart-money"; payload: SmartMoneyCardPayload }
+  | { kind: "meme"; payload: MemeCardPayload }
+  | { kind: "swap"; payload: SwapCardPayload }
+  | { kind: "transfer"; payload: TransferCardPayload };
 
 type ChatMessage = {
   id: string;
@@ -167,21 +154,17 @@ type TransferIntent = {
 };
 
 const suggestions = [
-  "查一下 BTC 价格",
-  "看看我的资产",
-  "有什么赚币产品",
-  "把 100 USDT 换成 ETH",
-  "转 20 USDT 到 0x1234567890abcdef1234567890abcdef12345678",
+  { label: "BTC 价格", icon: "chart-line" as const },
+  { label: "看看我的资产", icon: "wallet-outline" as const },
+  { label: "赚币产品", icon: "diamond-stone" as const },
+  { label: "100 USDT 换 ETH", icon: "swap-horizontal-bold" as const },
 ];
 
 const initialMessages: ChatMessage[] = [
   {
     id: "welcome-1",
     role: "assistant",
-    title: "海豚社区智能助手",
-    content:
-      "我已经接入 OKX OnchainOS 的真实能力。你可以直接让我查价格、看资产、找赚币产品，或继续发起 Swap 等链上操作。",
-    meta: "当前对话页优先走真实接口，调不通会直接返回错误提示",
+    content: "Hi, 我是 Dolphin. 你可以让我查价格、看资产、找赚币产品，或发起 Swap 等链上操作。",
   },
 ];
 
@@ -216,13 +199,13 @@ const SOLANA_TOKEN_MAP: Record<
   },
 };
 
+/* ══════════════════════════════════════════════════
+ *  Utility functions (unchanged business logic)
+ * ══════════════════════════════════════════════════ */
+
 function parseWallet(raw: string | null): StoredWalletSnapshot {
   if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredWalletSnapshot;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(raw) as StoredWalletSnapshot; } catch { return null; }
 }
 
 function maskAddress(address: string) {
@@ -231,62 +214,40 @@ function maskAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function normalizeSymbol(value: string) {
-  return value.trim().toUpperCase();
-}
+function normalizeSymbol(value: string) { return value.trim().toUpperCase(); }
 
-function getPrimaryWalletAddress(
-  wallet: StoredWalletSnapshot,
-  chainKind: DexChainKind,
-) {
-  if (chainKind === "solana") {
-    return wallet?.solanaAddress?.trim() ?? "";
-  }
+function getPrimaryWalletAddress(wallet: StoredWalletSnapshot, chainKind: DexChainKind) {
+  if (chainKind === "solana") return wallet?.solanaAddress?.trim() ?? "";
   return wallet?.evmAddress?.trim() ?? "";
 }
 
 function resolveSwapToken(symbol: string, chainKind: DexChainKind) {
   const normalized = normalizeSymbol(symbol);
-  return chainKind === "solana"
-    ? SOLANA_TOKEN_MAP[normalized]
-    : EVM_TOKEN_MAP[normalized];
+  return chainKind === "solana" ? SOLANA_TOKEN_MAP[normalized] : EVM_TOKEN_MAP[normalized];
 }
 
 function toRawAmount(amount: string, decimals: number) {
   const normalized = amount.trim();
-  if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
-    throw new Error("兑换数量格式不正确，请输入有效数字。");
-  }
-
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) throw new Error("兑换数量格式不正确，请输入有效数字。");
   const [wholePart, fractionPart = ""] = normalized.split(".");
-  const combined = `${wholePart}${fractionPart.padEnd(decimals, "0").slice(0, decimals)}`
-    .replace(/^0+(?=\d)/, "")
-    .replace(/^$/, "0");
+  const combined = `${wholePart}${fractionPart.padEnd(decimals, "0").slice(0, decimals)}`.replace(/^0+(?=\d)/, "").replace(/^$/, "0");
   return BigInt(combined).toString();
 }
 
 function formatTokenAmount(raw: string, decimals: number, maxFractionDigits = 6) {
-  if (!raw || !/^\d+$/.test(raw)) {
-    return "0";
-  }
-
+  if (!raw || !/^\d+$/.test(raw)) return "0";
   const normalized = raw.replace(/^0+(?=\d)/, "") || "0";
   const padded = normalized.padStart(decimals + 1, "0");
   const integerPart = padded.slice(0, -decimals) || "0";
   const fractionPart = decimals > 0 ? padded.slice(-decimals) : "";
-  const trimmedFraction = fractionPart
-    .slice(0, maxFractionDigits)
-    .replace(/0+$/, "");
+  const trimmedFraction = fractionPart.slice(0, maxFractionDigits).replace(/0+$/, "");
   return trimmedFraction ? `${integerPart}.${trimmedFraction}` : integerPart;
 }
 
 function formatSwapUnitPrice(fromAmount: string, toAmount: string, toSymbol: string, fromSymbol: string) {
   const fromValue = Number(fromAmount);
   const toValue = Number(toAmount);
-  if (!Number.isFinite(fromValue) || !Number.isFinite(toValue) || fromValue <= 0 || toValue <= 0) {
-    return "--";
-  }
-
+  if (!Number.isFinite(fromValue) || !Number.isFinite(toValue) || fromValue <= 0 || toValue <= 0) return "--";
   const quote = toValue / fromValue;
   const digits = quote >= 1000 ? 2 : quote >= 1 ? 4 : 6;
   return `1 ${fromSymbol} ≈ ${quote.toFixed(digits)} ${toSymbol}`;
@@ -294,9 +255,7 @@ function formatSwapUnitPrice(fromAmount: string, toAmount: string, toSymbol: str
 
 function parseMcpJsonResult(payload: any) {
   const text = payload?.result?.content?.[0]?.text;
-  if (!text || typeof text !== "string") {
-    throw new Error("OKX MCP 未返回可解析的报价内容。");
-  }
+  if (!text || typeof text !== "string") throw new Error("OKX MCP 未返回可解析的报价内容。");
   return JSON.parse(text) as Record<string, any>;
 }
 
@@ -305,246 +264,62 @@ function detectTransferIntent(message: string): TransferIntent | null {
   const matched = normalized.match(
     /(?:转账|转|发送|打给|send)\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]{2,10})\s*(?:到|给|to)\s*([A-Za-z0-9]{24,})/i,
   );
-
-  if (!matched) {
-    return null;
-  }
-
+  if (!matched) return null;
   const [, amount, symbolRaw, address] = matched;
   const symbol = normalizeSymbol(symbolRaw);
   const chainKind: DexChainKind = address.startsWith("0x") ? "evm" : "solana";
-
-  return {
-    amount,
-    symbol,
-    address,
-    chainKind,
-  };
+  return { amount, symbol, address, chainKind };
 }
 
-function buildAssistantMessages(
-  response: ChatAiIntentResponse,
-  seed: number,
-): ChatMessage[] {
+function buildAssistantMessages(response: ChatAiIntentResponse, seed: number): ChatMessage[] {
   if ("mode" in response && response.mode === "grid-strategy") {
-    return [
-      {
-        id: `assistant-${seed}-grid`,
-        role: "assistant",
-        title:
-          response.result.action === "create" ? "网格策略建议" : "策略执行结果",
-        content: response.result.message,
-        meta: "已连接服务端策略编排",
-      },
-    ];
+    return [{ id: `assistant-${seed}-grid`, role: "assistant", content: response.result.message }];
   }
-
   if (!("intent" in response) || !response.intent) {
-    return [
-      {
-        id: `assistant-${seed}-fallback`,
-        role: "assistant",
-        title: "系统提示",
-        content: "当前请求已返回，但暂时没有可直接渲染的卡片结构。",
-        tone: "warning",
-      },
-    ];
+    return [{ id: `assistant-${seed}-fallback`, role: "assistant", content: "当前请求已返回，但暂时没有可直接渲染的内容。", tone: "warning" }];
   }
-
-  const titleMap: Record<string, string> = {
-    market: "实时行情",
-    earn: "AI 智能赚币",
-    asset: "资产摘要",
-    deposit: "充值指引",
-    profit: "收益复盘",
-    swap: "兑换意图",
-    general: "策略回应",
-  };
-
   const messages: ChatMessage[] = [
-    {
-      id: `assistant-${seed}-main`,
-      role: "assistant",
-      title: titleMap[response.intent.action] ?? "AI 回答",
-      content: response.intent.reply,
-      meta: `置信度 ${(response.intent.confidence * 100).toFixed(0)}%`,
-    },
+    { id: `assistant-${seed}-main`, role: "assistant", content: response.intent.reply },
   ];
-
   if (response.intent.priceText) {
-    messages.push({
-      id: `assistant-${seed}-price`,
-      role: "assistant",
-      title: "价格快照",
-      content: response.intent.priceText,
-      tone: "success",
-      meta: "已返回实时价格结果",
-    });
+    messages.push({ id: `assistant-${seed}-price`, role: "assistant", content: response.intent.priceText, tone: "success" });
   }
-
   if (response.earnPlan) {
-    messages.push({
-      id: `assistant-${seed}-earn`,
-      role: "assistant",
-      title: "推荐申购方案",
-      content: `${response.earnPlan.protocol} · ${response.earnPlan.chain} · ${response.earnPlan.symbol}\n建议金额 $${response.earnPlan.amount.toLocaleString("zh-CN")}，参考 APR ${response.earnPlan.apr.toFixed(2)}%，风险等级 ${response.earnPlan.riskLabel}。\n${response.earnPlan.description}`,
-      tone: "success",
-      meta: `TVL $${response.earnPlan.tvlUsd.toLocaleString("zh-CN")}`,
-    });
+    messages.push({ id: `assistant-${seed}-earn`, role: "assistant", content: `${response.earnPlan.protocol} · ${response.earnPlan.chain} · ${response.earnPlan.symbol}\n建议金额 $${response.earnPlan.amount.toLocaleString("zh-CN")}，参考 APR ${response.earnPlan.apr.toFixed(2)}%，风险等级 ${response.earnPlan.riskLabel}。\n${response.earnPlan.description}`, tone: "success" });
   }
-
   if (response.profit) {
-    messages.push({
-      id: `assistant-${seed}-profit`,
-      role: "assistant",
-      title: "收益表现",
-      content: `${response.profit.protocol} · ${response.profit.chain}\n累计收益 $${response.profit.totalProfit.toFixed(2)}，今日收益 $${response.profit.todayProfit.toFixed(2)}，APR ${response.profit.apr.toFixed(2)}%。`,
-      meta: `${response.profit.periodLabel} · 已投入 $${response.profit.totalInvested.toFixed(2)}`,
-    });
+    messages.push({ id: `assistant-${seed}-profit`, role: "assistant", content: `${response.profit.protocol} · ${response.profit.chain}\n累计收益 $${response.profit.totalProfit.toFixed(2)}，今日收益 $${response.profit.todayProfit.toFixed(2)}，APR ${response.profit.apr.toFixed(2)}%。` });
   }
-
   if (response.deposit) {
-    messages.push({
-      id: `assistant-${seed}-deposit`,
-      role: "assistant",
-      title: "充值地址",
-      content: `${response.deposit.networkLabel}\n${response.deposit.address}`,
-      meta:
-        response.deposit.chainKind === "solana" ? "Solana 网络" : "EVM 网络",
-    });
+    messages.push({ id: `assistant-${seed}-deposit`, role: "assistant", content: `${response.deposit.networkLabel}\n${response.deposit.address}` });
   }
-
   if (response.intent.assetSummary) {
-    messages.push({
-      id: `assistant-${seed}-asset`,
-      role: "assistant",
-      title: "资产上下文",
-      content: response.intent.assetSummary,
-      meta: "基于钱包上下文返回",
-    });
+    messages.push({ id: `assistant-${seed}-asset`, role: "assistant", content: response.intent.assetSummary });
   }
-
   return messages;
 }
 
-function buildSwapMessages(params: {
-  amount: string;
-  fromSymbol: string;
-  toSymbol: string;
-  chainKind: DexChainKind;
-  seed: number;
-  estimatedReceive: string;
-  estimatedPrice: string;
-  slippage: string;
-  priceImpact: string;
-  routeLabel: string;
-  phase: OnchainTxPhase;
-  signatureRequest?: NonNullable<PendingSignatureContext["swap"]>;
-  progress?: {
-    key: string;
-    label: string;
-    status: "done" | "pending";
-  }[];
-}): ChatMessage[] {
-  const {
-    amount,
-    fromSymbol,
-    toSymbol,
-    chainKind,
-    seed,
-    estimatedReceive,
-    estimatedPrice,
-    slippage,
-    priceImpact,
-    routeLabel,
-    phase,
-    signatureRequest,
-    progress,
-  } = params;
-
+function buildSwapMessages(params: SwapCardPayload & { seed: number }): ChatMessage[] {
+  const { seed, ...payload } = params;
   return [
-    {
-      id: `assistant-${seed}-swap-intent`,
-      role: "assistant",
-      title: "兑换意图识别",
-      content: `已识别你的兑换请求：${amount} ${fromSymbol} → ${toSymbol}。`,
-      meta: chainKind === "solana" ? "Solana 路径" : "EVM 路径",
-    },
-    {
-      id: `assistant-${seed}-swap-card`,
-      role: "assistant",
-      title: "Swap 确认卡片",
-      content: `已通过 OKX Onchain OS 生成 ${fromSymbol} → ${toSymbol} 的执行确认摘要。`,
-      tone: "success",
-      meta: `数据来源：OKX Onchain OS · 预估到账 ${estimatedReceive} ${toSymbol} · 价格影响 ${priceImpact}`,
-      card: {
-        kind: "swap",
-        payload: {
-          amount,
-          fromSymbol,
-          toSymbol,
-          chainKind,
-          estimatedReceive,
-          estimatedPrice,
-          slippage,
-          priceImpact,
-          routeLabel,
-          phase,
-          signatureRequest,
-          progress,
-        },
-      },
-    },
+    { id: `assistant-${seed}-swap-card`, role: "assistant", content: `已通过 OKX Onchain OS 生成 ${payload.fromSymbol} → ${payload.toSymbol} 的执行摘要。`, card: { kind: "swap", payload } },
   ];
 }
 
-function buildTransferMessages(
-  intent: TransferIntent,
-  wallet: StoredWalletSnapshot,
-  seed: number,
-): ChatMessage[] {
+function buildTransferMessages(intent: TransferIntent, wallet: StoredWalletSnapshot, seed: number): ChatMessage[] {
   const fromAddress = getPrimaryWalletAddress(wallet, intent.chainKind);
   const progress = [
     { key: "prepare", label: "已整理转账请求", status: "done" as const },
     { key: "confirm", label: "等待执行确认", status: "pending" as const },
     { key: "broadcast", label: "等待广播交易", status: "pending" as const },
   ];
-
   return [
-    {
-      id: `assistant-${seed}-transfer-intent`,
-      role: "assistant",
-      title: "转账意图识别",
-      content: `已识别你的转账请求：向 ${maskAddress(intent.address)} 发送 ${intent.amount} ${intent.symbol}。`,
-      meta: intent.chainKind === "solana" ? "Solana 转账路径" : "EVM 转账路径",
-    },
-    {
-      id: `assistant-${seed}-transfer-execute`,
-      role: "assistant",
-      title: "转账准备状态",
-      content: `我已经整理好本次转账所需的关键信息，当前可以先由你确认执行条件。\n发送地址：${maskAddress(fromAddress)}\n接收地址：${maskAddress(intent.address)}\n金额：${intent.amount} ${intent.symbol}`,
-      tone: "warning",
-      meta: "当前仍是待执行状态，下一步将进入 Agent Wallet 确认与链上广播承接。",
-      card: {
-        kind: "transfer",
-        payload: {
-            amount: intent.amount,
-            symbol: intent.symbol,
-            chainKind: intent.chainKind,
-            fromAddress,
-            toAddress: intent.address,
-            phase: "awaiting_confirmation",
-            progress,
-          },
-      },
-    },
+    { id: `assistant-${seed}-transfer-execute`, role: "assistant", content: `已识别转账：向 ${maskAddress(intent.address)} 发送 ${intent.amount} ${intent.symbol}。`, card: { kind: "transfer", payload: { amount: intent.amount, symbol: intent.symbol, chainKind: intent.chainKind, fromAddress, toAddress: intent.address, phase: "awaiting_confirmation", progress } } },
   ];
 }
 
 function extractPriceSymbol(message: string): string | null {
-  const normalized = message.trim().toUpperCase();
-  const wantsPrice = /(价格|多少钱|行���|报价|涨跌|PRICE|QUOTE|MARKET)/i.test(message);
-
+  const wantsPrice = /(价格|多少钱|行情|报价|涨跌|PRICE|QUOTE|MARKET)/i.test(message);
   const aliases: Array<{ symbol: string; patterns: RegExp[] }> = [
     { symbol: "BTC", patterns: [/\bBTC\b/i, /比特币/i, /BITCOIN/i] },
     { symbol: "ETH", patterns: [/\bETH\b/i, /以太坊/i, /ETHEREUM/i] },
@@ -552,106 +327,38 @@ function extractPriceSymbol(message: string): string | null {
     { symbol: "BNB", patterns: [/\bBNB\b/i, /币安币/i, /BINANCE COIN/i] },
     { symbol: "SUI", patterns: [/\bSUI\b/i] },
   ];
-
+  const normalized = message.trim().toUpperCase();
   for (const item of aliases) {
-    if (item.patterns.some((pattern) => pattern.test(normalized)) && wantsPrice) {
-      return item.symbol;
-    }
+    if (item.patterns.some((pattern) => pattern.test(normalized)) && wantsPrice) return item.symbol;
   }
-
   return null;
 }
 
 function formatCurrency(value: number, digits = 2) {
-  return new Intl.NumberFormat("zh-CN", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(value);
+  return new Intl.NumberFormat("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
 }
-
 function formatPrice(value: number) {
-  if (value >= 1000) {
-    return `$${formatCurrency(value, 2)}`;
-  }
-  if (value >= 1) {
-    return `$${formatCurrency(value, 4)}`;
-  }
+  if (value >= 1000) return `$${formatCurrency(value, 2)}`;
+  if (value >= 1) return `$${formatCurrency(value, 4)}`;
   return `$${formatCurrency(value, 6)}`;
 }
-
 function formatVolume(value?: string) {
   const parsed = Number(value ?? 0);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return "--";
-  }
-  if (parsed >= 1_000_000_000) {
-    return `$${formatCurrency(parsed / 1_000_000_000, 2)}B`;
-  }
-  if (parsed >= 1_000_000) {
-    return `$${formatCurrency(parsed / 1_000_000, 2)}M`;
-  }
+  if (!Number.isFinite(parsed) || parsed <= 0) return "--";
+  if (parsed >= 1_000_000_000) return `$${formatCurrency(parsed / 1_000_000_000, 2)}B`;
+  if (parsed >= 1_000_000) return `$${formatCurrency(parsed / 1_000_000, 2)}M`;
   return `$${formatCurrency(parsed, 0)}`;
 }
-
 function formatChange(change24h: number | null) {
-  if (change24h === null || !Number.isFinite(change24h)) {
-    return "--";
-  }
+  if (change24h === null || !Number.isFinite(change24h)) return "--";
   const percent = change24h * 100;
   return `${percent >= 0 ? "+" : ""}${percent.toFixed(2)}%`;
 }
-
 function formatSnapshotTime(value: string) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "刚刚";
-  }
-  return date.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (Number.isNaN(date.getTime())) return "刚刚";
+  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
-
-function buildPriceMessages(snapshot: MarketSnapshot, seed: number): ChatMessage[] {
-  return [
-    {
-      id: `assistant-${seed}-price-card`,
-      role: "assistant",
-      title: `${snapshot.symbol} 实时价格`,
-      content: `已为你查询 ${snapshot.symbol} 的 OKX 实时价格数据。`,
-      meta: "数据来源：OKX OnchainOS · 实时返回",
-      card: {
-        kind: "price",
-        payload: {
-          snapshot,
-        },
-      },
-    },
-  ];
-}
-
-function isAssetIntent(message: string) {
-  return /(资产|余额|持仓|仓位|portfolio|balance)/i.test(message);
-}
-
-function extractDeFiToken(message: string) {
-  const normalized = message.toUpperCase();
-  const matched = normalized.match(/BTC|ETH|SOL|USDT|USDC|DAI/);
-  return matched?.[0] ?? "USDT";
-}
-
-function isDeFiIntent(message: string) {
-  return /(赚币|理财|收益|申购|赚利息|earn|defi|apy|apr|产品)/i.test(message);
-}
-
-function isSmartMoneyIntent(message: string) {
-  return /(聪明钱|大户|巨鲸|kol|鲸鱼|最近在买什么|smart money)/i.test(message);
-}
-
-function isMemeIntent(message: string) {
-  return /(meme|土狗|热门币|热门 meme|新币|pump|memecoin)/i.test(message);
-}
-
 function formatUsdCompact(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0";
   if (value >= 1_000_000_000) return `$${formatCurrency(value / 1_000_000_000, 2)}B`;
@@ -660,108 +367,38 @@ function formatUsdCompact(value: number) {
   return `$${formatCurrency(value, 2)}`;
 }
 
-function buildAssetMessages(
-  assets: AgentWalletAssetsResponse,
-  seed: number,
-): ChatMessage[] {
-  const chainCount = assets.walletAddresses.length;
-  const assetCount = assets.walletAddresses.reduce(
-    (sum, item) => sum + item.assets.length,
-    0,
-  );
+function buildPriceMessages(snapshot: MarketSnapshot, seed: number): ChatMessage[] {
+  return [{ id: `assistant-${seed}-price-card`, role: "assistant", content: `已为你查询 ${snapshot.symbol} 的实时价格。`, card: { kind: "price", payload: { snapshot } } }];
+}
+function isAssetIntent(message: string) { return /(资产|余额|持仓|仓位|portfolio|balance)/i.test(message); }
+function extractDeFiToken(message: string) { const matched = message.toUpperCase().match(/BTC|ETH|SOL|USDT|USDC|DAI/); return matched?.[0] ?? "USDT"; }
+function isDeFiIntent(message: string) { return /(赚币|理财|收益|申购|赚利息|earn|defi|apy|apr|产品)/i.test(message); }
+function isSmartMoneyIntent(message: string) { return /(聪明钱|大户|巨鲸|kol|鲸鱼|最近在买什么|smart money)/i.test(message); }
+function isMemeIntent(message: string) { return /(meme|土狗|热门币|热门 meme|新币|pump|memecoin)/i.test(message); }
 
-  return [
-    {
-      id: `assistant-${seed}-asset-card`,
-      role: "assistant",
-      title: "资产总览",
-      content: `已为你拉取 Agent Wallet 的真实链上资产。当前共覆盖 ${chainCount} 条链、${assetCount} 个资产头寸。`,
-      meta: `总资产 ${formatUsdCompact(Number(assets.totalAssetValue))} · ${new Date(assets.updatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`,
-      card: {
-        kind: "asset",
-        payload: {
-          assets,
-        },
-      },
-    },
-  ];
+function buildAssetMessages(assets: AgentWalletAssetsResponse, seed: number): ChatMessage[] {
+  return [{ id: `assistant-${seed}-asset-card`, role: "assistant", content: `已拉取 Agent Wallet 链上资产。`, card: { kind: "asset", payload: { assets } } }];
+}
+function buildDeFiMessages(token: string, products: DeFiProductItem[], seed: number): ChatMessage[] {
+  return [{ id: `assistant-${seed}-defi-card`, role: "assistant", content: `已检索 ${token} 相关赚币产品。`, card: { kind: "defi", payload: { token, products } } }];
+}
+function buildSmartMoneyMessages(wallets: Awaited<ReturnType<typeof getSmartMoneyLeaderboardByMcp>>, seed: number): ChatMessage[] {
+  return [{ id: `assistant-${seed}-smart-money-card`, role: "assistant", content: "已拉取聪明钱榜单。", card: { kind: "smart-money", payload: { wallets } } }];
+}
+function buildMemeMessages(tokens: Awaited<ReturnType<typeof getMemeScanListByMcp>>, seed: number): ChatMessage[] {
+  return [{ id: `assistant-${seed}-meme-card`, role: "assistant", content: "已扫描热门 Meme 代币。", card: { kind: "meme", payload: { tokens } } }];
 }
 
-function buildDeFiMessages(
-  token: string,
-  products: DeFiProductItem[],
-  seed: number,
-): ChatMessage[] {
-  return [
-    {
-      id: `assistant-${seed}-defi-card`,
-      role: "assistant",
-      title: `${token} DeFi 产品`,
-      content: `已为你从 OKX OnchainOS 检索 ${token} 相关赚币产品。当前优先展示收益与体量靠前的可选项。`,
-      meta: `共返回 ${products.length} 个结果 · 数据来源 OKX OnchainOS`,
-      card: {
-        kind: "defi",
-        payload: {
-          token,
-          products,
-        },
-      },
-    },
-  ];
-}
-
-function buildSmartMoneyMessages(
-  wallets: Awaited<ReturnType<typeof getSmartMoneyLeaderboardByMcp>>,
-  seed: number,
-): ChatMessage[] {
-  return [
-    {
-      id: `assistant-${seed}-smart-money-card`,
-      role: "assistant",
-      title: "聪明钱追踪",
-      content: "已为你拉取 OKX 市场监控中的聪明钱榜单，优先展示近期收益表现最强的钱包。",
-      meta: `共返回 ${wallets.length} 个聪明钱地址 · 数据来源 OKX OnchainOS`,
-      card: {
-        kind: "smart-money",
-        payload: { wallets },
-      },
-    },
-  ];
-}
-
-function buildMemeMessages(
-  tokens: Awaited<ReturnType<typeof getMemeScanListByMcp>>,
-  seed: number,
-): ChatMessage[] {
-  return [
-    {
-      id: `assistant-${seed}-meme-card`,
-      role: "assistant",
-      title: "热门 Meme 扫描",
-      content: "已为你拉取 OKX 扫链能力中的新晋 Meme 代币，优先展示最新上榜且交易活跃的项目。",
-      meta: `共返回 ${tokens.length} 个代币 · 数据来源 OKX OnchainOS`,
-      card: {
-        kind: "meme",
-        payload: { tokens },
-      },
-    },
-  ];
-}
+/* ══════════════════════════════════════════════════
+ *  Chat Screen Component
+ * ══════════════════════════════════════════════════ */
 
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
-    draft?: string;
-    draftKey?: string;
-    q?: string;
-    source?: string;
-    sigContextId?: string;
-    sigFlow?: "swap" | "transfer";
-    sigStatus?: string;
-    sigSignedTx?: string;
-    sigJitoSignedTx?: string;
-    sigTxHash?: string;
-    sigError?: string;
+    draft?: string; draftKey?: string; q?: string; source?: string;
+    sigContextId?: string; sigFlow?: "swap" | "transfer"; sigStatus?: string;
+    sigSignedTx?: string; sigJitoSignedTx?: string; sigTxHash?: string; sigError?: string;
   }>();
   const lastDraftKeyRef = useRef("");
   const lastSignatureKeyRef = useRef("");
@@ -770,546 +407,202 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorText, setErrorText] = useState("");
-
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
 
   const incomingQuery = typeof params.q === "string" ? params.q.trim() : "";
   const isFromCommunity = params.source === "community" && incomingQuery.length > 0;
   const isFromSignatureCallback = params.source === "signature-callback";
 
-  const walletHint = useMemo(() => {
-    return "支持查询实时行情、赚币产品、钱包资产、聪明钱、Meme 扫描，以及基于钱包地址发起真实兑换链路。";
-  }, []);
-
   const appendMessages = useCallback((nextMessages: ChatMessage[]) => {
     setMessages((prev) => [...prev, ...nextMessages]);
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    });
+    requestAnimationFrame(() => { flatListRef.current?.scrollToEnd({ animated: true }); });
   }, []);
 
   const startSignatureFlow = useCallback(
     async (context: PendingSignatureContext, summary: { title: string; content: string }) => {
       const encodedContextId = encodeSignatureContextId(context.id);
       const callbackUrl = buildSignatureCallbackUrl({ ctx: encodedContextId });
-
       await savePendingSignatureContext(context);
-
-      appendMessages([
-        {
-          id: `assistant-signature-launch-${context.id}`,
-          role: "assistant",
-          title: summary.title,
-          content: summary.content,
-          meta: SIGNATURE_PORTAL_URL
-            ? "已生成确认回调地址，正在打开外部执行确认页。"
-            : "已生成执行确认回调地址，但当前环境尚未配置 Agent Wallet 确认入口。",
-          tone: SIGNATURE_PORTAL_URL ? "default" : "warning",
-        },
-      ]);
-
-      if (!SIGNATURE_PORTAL_URL) {
-        return;
-      }
-
+      appendMessages([{ id: `assistant-signature-launch-${context.id}`, role: "assistant", content: summary.content, tone: SIGNATURE_PORTAL_URL ? "default" : "warning" }]);
+      if (!SIGNATURE_PORTAL_URL) return;
       const launchUrl = new URL(SIGNATURE_PORTAL_URL);
       launchUrl.searchParams.set("flow", context.flow);
       launchUrl.searchParams.set("chainKind", context.chainKind);
       launchUrl.searchParams.set("ctx", encodedContextId);
       launchUrl.searchParams.set("callbackUrl", callbackUrl);
-
       if (context.flow === "swap" && context.swap?.builderCode) {
         launchUrl.searchParams.set("builderCode", context.swap.builderCode);
         launchUrl.searchParams.set("builderCodeInjectionMode", context.swap.builderCodeInjectionMode || "data_suffix");
-        launchUrl.searchParams.set(
-          "builderCodeTargetCapability",
-          context.swap.builderCodeTargetCapability || "wallet_sendCalls",
-        );
-        if (context.swap.builderCodeDataSuffix) {
-          launchUrl.searchParams.set("builderCodeDataSuffix", context.swap.builderCodeDataSuffix);
-        }
-        if (context.swap.builderCodeCallDataMemo) {
-          launchUrl.searchParams.set("builderCodeCallDataMemo", context.swap.builderCodeCallDataMemo);
-        }
+        launchUrl.searchParams.set("builderCodeTargetCapability", context.swap.builderCodeTargetCapability || "wallet_sendCalls");
+        if (context.swap.builderCodeDataSuffix) launchUrl.searchParams.set("builderCodeDataSuffix", context.swap.builderCodeDataSuffix);
+        if (context.swap.builderCodeCallDataMemo) launchUrl.searchParams.set("builderCodeCallDataMemo", context.swap.builderCodeCallDataMemo);
       }
-
-      launchUrl.searchParams.set(
-        "payload",
-        JSON.stringify(
-          context.flow === "swap"
-            ? {
-                amount: context.swap?.displayAmount || context.swap?.amount || "",
-                fromTokenSymbol: context.swap?.fromTokenSymbol || "",
-                toTokenSymbol: context.swap?.toTokenSymbol || "",
-                routeLabel: context.swap?.routeLabel || "",
-                builderCode: context.swap?.builderCode,
-                builderCodeInjectionMode: context.swap?.builderCodeInjectionMode,
-                builderCodeTargetCapability: context.swap?.builderCodeTargetCapability,
-                builderCodeDataSuffix: context.swap?.builderCodeDataSuffix,
-                builderCodeCallDataMemo: context.swap?.builderCodeCallDataMemo,
-                swap: context.swap ?? null,
-              }
-            : {
-                transfer: context.transfer ?? null,
-              },
-        ),
-      );
-
-      try {
-        await Linking.openURL(launchUrl.toString());
-      } catch (launchError) {
-        appendMessages([
-          {
-            id: `assistant-signature-launch-error-${context.id}`,
-            role: "assistant",
-            title: "确认页暂未打开",
-            content:
-              launchError instanceof Error
-                ? launchError.message
-                : "已保存待确认上下文，但当前暂时无法打开外部执行确认页。",
-            meta: "待确认上下文已保留，你可以在 Agent Wallet 确认入口配置完成后再次发起。",
-            tone: "warning",
-          },
-        ]);
+      launchUrl.searchParams.set("payload", JSON.stringify(
+        context.flow === "swap"
+          ? { amount: context.swap?.displayAmount || context.swap?.amount || "", fromTokenSymbol: context.swap?.fromTokenSymbol || "", toTokenSymbol: context.swap?.toTokenSymbol || "", routeLabel: context.swap?.routeLabel || "", builderCode: context.swap?.builderCode, builderCodeInjectionMode: context.swap?.builderCodeInjectionMode, builderCodeTargetCapability: context.swap?.builderCodeTargetCapability, builderCodeDataSuffix: context.swap?.builderCodeDataSuffix, builderCodeCallDataMemo: context.swap?.builderCodeCallDataMemo, swap: context.swap ?? null }
+          : { transfer: context.transfer ?? null },
+      ));
+      try { await Linking.openURL(launchUrl.toString()); } catch (launchError) {
+        appendMessages([{ id: `assistant-signature-launch-error-${context.id}`, role: "assistant", content: launchError instanceof Error ? launchError.message : "暂时无法打开确认页。", tone: "warning" }]);
       }
-    },
-    [appendMessages],
+    }, [appendMessages],
   );
 
-  const handleTransferSignature = useCallback(
-    async (transferCard: TransferCardPayload) => {
-      const context: PendingSignatureContext = {
-        id: `transfer-sign-${Date.now()}`,
-        flow: "transfer",
-        chainKind: transferCard.chainKind,
-        createdAt: new Date().toISOString(),
-        source: "chat",
-        draftPrompt: `我正在处理 ${transferCard.amount} ${transferCard.symbol} 转账确认，请在返回后继续广播与回执承接。`,
-        progress: transferCard.progress,
-        transfer: {
-          amount: transferCard.amount,
-          symbol: transferCard.symbol,
-          fromAddress: transferCard.fromAddress,
-          toAddress: transferCard.toAddress,
-        },
-      };
+  const handleTransferSignature = useCallback(async (transferCard: TransferCardPayload) => {
+    const context: PendingSignatureContext = {
+      id: `transfer-sign-${Date.now()}`, flow: "transfer", chainKind: transferCard.chainKind,
+      createdAt: new Date().toISOString(), source: "chat",
+      draftPrompt: `我正在处理 ${transferCard.amount} ${transferCard.symbol} 转账确认。`,
+      progress: transferCard.progress,
+      transfer: { amount: transferCard.amount, symbol: transferCard.symbol, fromAddress: transferCard.fromAddress, toAddress: transferCard.toAddress },
+    };
+    await startSignatureFlow(context, { title: "已准备转账确认", content: `为 ${transferCard.amount} ${transferCard.symbol} 转账准备确认，正在打开 Agent Wallet...` });
+  }, [startSignatureFlow]);
 
-      await startSignatureFlow(context, {
-        title: "已准备转账确认",
-        content: `我已经为这笔 ${transferCard.amount} ${transferCard.symbol} 转账保存待续跑上下文，接下来会把你带到 Agent Wallet 执行确认页。`,
-      });
-    },
-    [startSignatureFlow],
-  );
+  const handleSwapSignature = useCallback(async (swapCard: SwapCardPayload) => {
+    if (!swapCard.signatureRequest) {
+      appendMessages([{ id: `assistant-swap-signature-missing-${Date.now()}`, role: "assistant", content: "当前卡片还没有完整的执行数据，请重新获取报价。", tone: "warning" }]);
+      return;
+    }
+    const context: PendingSignatureContext = {
+      id: `swap-sign-${Date.now()}`, flow: "swap", chainKind: swapCard.chainKind,
+      createdAt: new Date().toISOString(), source: "chat",
+      draftPrompt: `我正在处理 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol} 的执行确认。`,
+      progress: swapCard.progress, swap: swapCard.signatureRequest,
+    };
+    await startSignatureFlow(context, { title: "已准备兑换确认", content: `为 ${swapCard.amount} ${swapCard.fromSymbol} → ${swapCard.toSymbol} 兑换准备确认...` });
+  }, [appendMessages, startSignatureFlow]);
 
-  const handleSwapSignature = useCallback(
-    async (swapCard: SwapCardPayload) => {
-      if (!swapCard.signatureRequest) {
-        appendMessages([
-          {
-            id: `assistant-swap-signature-missing-${Date.now()}`,
-            role: "assistant",
-            title: "待确认交易尚未准备完成",
-            content: "当前这张兑换卡片还没有拿到完整的待确认执行数据，请先重新获取报价或重新整理一次执行请求。",
-            meta: "需要同时具备待确认执行数据与完整兑换参数，才能进入确认回调续跑。",
-            tone: "warning",
-          },
-        ]);
+  const runSwapFlow = useCallback(async (content: string, wallet: StoredWalletSnapshot, seed: number, presetIntent?: AgentSwapIntent) => {
+    let parsedSwap: { amount: string; fromSymbol: string; toSymbol: string; chainKind: DexChainKind | null } | null = null;
+    if (presetIntent) {
+      parsedSwap = { amount: presetIntent.payload.amount, fromSymbol: presetIntent.payload.fromSymbol, toSymbol: presetIntent.payload.toSymbol, chainKind: presetIntent.payload.chainKind };
+    } else {
+      const parsed = await parseDexSwapIntent(content);
+      if (parsed.intent.action !== "swap") return [{ id: `assistant-${seed}-swap-unknown`, role: "assistant", content: "信息不完整，试试"把 100 USDT 换成 ETH"这种说法。", tone: "warning" }] satisfies ChatMessage[];
+      parsedSwap = { amount: parsed.intent.amount, fromSymbol: parsed.intent.fromSymbol, toSymbol: parsed.intent.toSymbol, chainKind: parsed.intent.chainKind };
+    }
+    const chainKind = parsedSwap.chainKind ?? "evm";
+    const walletAddress = getPrimaryWalletAddress(wallet, chainKind);
+    if (!walletAddress) return [{ id: `assistant-${seed}-swap-no-wallet`, role: "assistant", content: "当前没有可用的钱包地址，请先完成登录。", tone: "danger" }] satisfies ChatMessage[];
+    const fromToken = resolveSwapToken(parsedSwap.fromSymbol, chainKind);
+    const toToken = resolveSwapToken(parsedSwap.toSymbol, chainKind);
+    if (!fromToken || !toToken) return [{ id: `assistant-${seed}-swap-token-miss`, role: "assistant", content: `${parsedSwap.fromSymbol} → ${parsedSwap.toSymbol} 当前暂未接入。`, tone: "warning" }] satisfies ChatMessage[];
+
+    const slippage = "0.5";
+    const rawAmount = toRawAmount(parsedSwap.amount, fromToken.decimals);
+    const quoteResult = await previewOnchainSwap({ chainIndex: fromToken.chainIndex, amount: rawAmount, fromTokenAddress: fromToken.address, toTokenAddress: toToken.address, userWalletAddress: walletAddress, fromTokenSymbol: parsedSwap.fromSymbol, toTokenSymbol: parsedSwap.toSymbol, chainKind });
+    const estimatedReceive = quoteResult.quote?.toAmount ?? "0";
+    const estimatedPrice = formatSwapUnitPrice(parsedSwap.amount, estimatedReceive, parsedSwap.toSymbol, parsedSwap.fromSymbol);
+    const routeLabel = "OKX Onchain OS";
+    const priceImpact = "0%";
+
+    let executeResult: Awaited<ReturnType<typeof executeOnchainSwap>> | null = null;
+    try {
+      executeResult = await executeOnchainSwap({ chainIndex: fromToken.chainIndex, amount: rawAmount, fromTokenAddress: fromToken.address, toTokenAddress: toToken.address, userWalletAddress: walletAddress, fromTokenSymbol: parsedSwap.fromSymbol, toTokenSymbol: parsedSwap.toSymbol, displayAmount: parsedSwap.amount, chainKind, slippagePercent: slippage });
+    } catch (executeError) { console.warn("[runSwapFlow] executeOnchainSwap failed:", executeError); }
+
+    const builderCodePayload = buildXLayerBuilderCodePayload({ chainIndex: fromToken.chainIndex, chainKind });
+    const cardPayload: SwapCardPayload = {
+      amount: parsedSwap.amount, fromSymbol: parsedSwap.fromSymbol, toSymbol: parsedSwap.toSymbol, chainKind,
+      estimatedReceive, estimatedPrice, slippage, priceImpact, routeLabel,
+      phase: executeResult?.phase ?? "preview",
+      signatureRequest: executeResult?.phase === "awaiting_confirmation" && executeResult.swapTransaction
+        ? { chainIndex: fromToken.chainIndex, amount: rawAmount, fromTokenAddress: fromToken.address, toTokenAddress: toToken.address, userWalletAddress: walletAddress, fromTokenSymbol: parsedSwap.fromSymbol, toTokenSymbol: parsedSwap.toSymbol, slippagePercent: slippage, broadcastAddress: walletAddress, routeLabel, displayAmount: parsedSwap.amount, builderCode: builderCodePayload?.builderCode, builderCodeInjectionMode: builderCodePayload?.injectionMode, builderCodeTargetCapability: builderCodePayload?.targetCapability, builderCodeDataSuffix: builderCodePayload?.dataSuffix, builderCodeCallDataMemo: builderCodePayload?.callDataMemo, swapTransaction: executeResult.swapTransaction }
+        : undefined,
+      progress: executeResult?.progress,
+    };
+    const swapMessages = buildSwapMessages({ ...cardPayload, seed });
+    if (executeResult) {
+      const phaseMsg = executeResult.phase === "awaiting_confirmation" ? "已生成待确认请求，请完成 Agent Wallet 确认。"
+        : executeResult.phase === "success" ? `兑换完成，订单号 ${executeResult.orderId}。`
+        : executeResult.phase === "failed" ? "兑换执行失败，请检查余额和滑点。"
+        : `已提交执行，订单号 ${executeResult.orderId}。`;
+      swapMessages.push({ id: `assistant-${seed}-swap-receipt`, role: "assistant", content: phaseMsg, tone: executeResult.phase === "success" ? "success" : executeResult.phase === "failed" ? "danger" : "default" });
+    }
+    return swapMessages;
+  }, []);
+
+  const sendMessage = useCallback(async (rawText?: string) => {
+    const content = (rawText ?? input).trim();
+    if (!content || submitting) return;
+    setErrorText("");
+    setInput("");
+    appendMessages([{ id: `user-${Date.now()}`, role: "user", content }]);
+    setSubmitting(true);
+    try {
+      const walletRaw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
+      const wallet = parseWallet(walletRaw);
+      const seed = Date.now();
+      const triggeredIntent = detectAgentIntent(content);
+      const confirmCard = buildConfirmCard(triggeredIntent);
+
+      if (triggeredIntent.kind === "transfer") {
+        appendMessages(buildTransferMessages(triggeredIntent.payload, wallet, seed));
         return;
       }
-
-      const context: PendingSignatureContext = {
-        id: `swap-sign-${Date.now()}`,
-        flow: "swap",
-        chainKind: swapCard.chainKind,
-        createdAt: new Date().toISOString(),
-        source: "chat",
-        draftPrompt: `我正在处理 ${swapCard.amount} ${swapCard.fromSymbol} 换 ${swapCard.toSymbol} 的执行确认，请在返回后继续广播与订单查询。`,
-        progress: swapCard.progress,
-        swap: swapCard.signatureRequest,
-      };
-
-      await startSignatureFlow(context, {
-        title: "已准备兑换确认",
-        content: `我已经为这笔 ${swapCard.amount} ${swapCard.fromSymbol} → ${swapCard.toSymbol} 兑换保存待续跑上下文，接下来会把你带到 Agent Wallet 执行确认页。`,
-      });
-    },
-    [appendMessages, startSignatureFlow],
-  );
-
-  const runSwapFlow = useCallback(
-    async (
-      content: string,
-      wallet: StoredWalletSnapshot,
-      seed: number,
-      presetIntent?: AgentSwapIntent,
-    ) => {
-      let parsedSwap: {
-        amount: string;
-        fromSymbol: string;
-        toSymbol: string;
-        chainKind: DexChainKind | null;
-      } | null = null;
-
-      if (presetIntent) {
-        parsedSwap = {
-          amount: presetIntent.payload.amount,
-          fromSymbol: presetIntent.payload.fromSymbol,
-          toSymbol: presetIntent.payload.toSymbol,
-          chainKind: presetIntent.payload.chainKind,
-        };
-      } else {
-        const parsed = await parseDexSwapIntent(content);
-        if (parsed.intent.action !== "swap") {
-          return [
-            {
-              id: `assistant-${seed}-swap-unknown`,
-              role: "assistant",
-              title: "兑换信息还不完整",
-              content:
-                "我已经识别到你想发起兑换，但当前还缺少明确的金额或币种信息。你可以试试“把 100 USDT 换成 ETH”这种说法。",
-              tone: "warning",
-            },
-          ] satisfies ChatMessage[];
-        }
-
-        parsedSwap = {
-          amount: parsed.intent.amount,
-          fromSymbol: parsed.intent.fromSymbol,
-          toSymbol: parsed.intent.toSymbol,
-          chainKind: parsed.intent.chainKind,
-        };
-      }
-
-      const chainKind = parsedSwap.chainKind ?? "evm";
-      const walletAddress = getPrimaryWalletAddress(wallet, chainKind);
-      if (!walletAddress) {
-        return [
-          {
-            id: `assistant-${seed}-swap-no-wallet`,
-            role: "assistant",
-            title: "当前还不能发起兑换",
-            content: "我已经理解你的兑换意图，但当前没有可用的钱包地址，请先完成登录并创建智能钱包。",
-            tone: "danger",
-          },
-        ] satisfies ChatMessage[];
-      }
-
-      const fromToken = resolveSwapToken(parsedSwap.fromSymbol, chainKind);
-      const toToken = resolveSwapToken(parsedSwap.toSymbol, chainKind);
-      if (!fromToken || !toToken) {
-        return [
-          {
-            id: `assistant-${seed}-swap-token-miss`,
-            role: "assistant",
-            title: "当前币种暂未接入",
-            content: `我已经识别到你输入的是 ${parsedSwap.fromSymbol} → ${parsedSwap.toSymbol}。当前已接入 ${chainKind === "solana" ? "SOL / USDT" : "ETH / USDT / BTC"} 的兑换链路；如果需要更多币种，还需要继续补充 OKX 代币映射。`,
-            tone: "warning",
-          },
-        ] satisfies ChatMessage[];
-      }
-
-      const slippage = "0.5";
-      const rawAmount = toRawAmount(parsedSwap.amount, fromToken.decimals);
-      const quoteResult = await previewOnchainSwap({
-        chainIndex: fromToken.chainIndex,
-        amount: rawAmount,
-        fromTokenAddress: fromToken.address,
-        toTokenAddress: toToken.address,
-        userWalletAddress: walletAddress,
-        fromTokenSymbol: parsedSwap.fromSymbol,
-        toTokenSymbol: parsedSwap.toSymbol,
-        chainKind,
-      });
-
-      const estimatedReceive = quoteResult.quote?.toAmount ?? "0";
-      const estimatedPrice = formatSwapUnitPrice(
-        parsedSwap.amount,
-        estimatedReceive,
-        parsedSwap.toSymbol,
-        parsedSwap.fromSymbol,
-      );
-      const routeLabel = "OKX Onchain OS 执行链路";
-      const priceImpact = "0%";
-
-      let executeResult: Awaited<ReturnType<typeof executeOnchainSwap>> | null = null;
-      try {
-        executeResult = await executeOnchainSwap({
-          chainIndex: fromToken.chainIndex,
-          amount: rawAmount,
-          fromTokenAddress: fromToken.address,
-          toTokenAddress: toToken.address,
-          userWalletAddress: walletAddress,
-          fromTokenSymbol: parsedSwap.fromSymbol,
-          toTokenSymbol: parsedSwap.toSymbol,
-          displayAmount: parsedSwap.amount,
-          chainKind,
-          slippagePercent: slippage,
-        });
-      } catch (executeError) {
-        console.warn("[runSwapFlow] executeOnchainSwap failed (best-effort):", executeError);
-      }
-
-      const builderCodePayload = buildXLayerBuilderCodePayload({
-        chainIndex: fromToken.chainIndex,
-        chainKind,
-      });
-
-      const cardPayload: SwapCardPayload = {
-        amount: parsedSwap.amount,
-        fromSymbol: parsedSwap.fromSymbol,
-        toSymbol: parsedSwap.toSymbol,
-        chainKind,
-        estimatedReceive,
-        estimatedPrice,
-        slippage,
-        priceImpact,
-        routeLabel,
-        phase: executeResult?.phase ?? "preview",
-        signatureRequest:
-          executeResult?.phase === "awaiting_confirmation" && executeResult.swapTransaction
-            ? {
-                chainIndex: fromToken.chainIndex,
-                amount: rawAmount,
-                fromTokenAddress: fromToken.address,
-                toTokenAddress: toToken.address,
-                userWalletAddress: walletAddress,
-                fromTokenSymbol: parsedSwap.fromSymbol,
-                toTokenSymbol: parsedSwap.toSymbol,
-                slippagePercent: slippage,
-                broadcastAddress: walletAddress,
-                routeLabel,
-                displayAmount: parsedSwap.amount,
-                builderCode: builderCodePayload?.builderCode,
-                builderCodeInjectionMode: builderCodePayload?.injectionMode,
-                builderCodeTargetCapability: builderCodePayload?.targetCapability,
-                builderCodeDataSuffix: builderCodePayload?.dataSuffix,
-                builderCodeCallDataMemo: builderCodePayload?.callDataMemo,
-                swapTransaction: executeResult.swapTransaction,
-              }
-            : undefined,
-        progress: executeResult?.progress,
-      };
-      const swapMessages = buildSwapMessages({
-        ...cardPayload,
-        seed,
-      });
-
-      if (executeResult) {
-        const isSwapSettled = executeResult.phase === "success";
-        const isAwaitingConfirmation = executeResult.phase === "awaiting_confirmation";
-        const isSwapFailed = executeResult.phase === "failed";
-        swapMessages.push({
-          id: `assistant-${seed}-swap-receipt`,
-          role: "assistant",
-          title: isAwaitingConfirmation
-            ? "兑换待确认状态"
-            : isSwapSettled
-              ? "兑换执行回执"
-              : isSwapFailed
-                ? "兑换执行失败"
-                : "兑换处理状态",
-          content: isAwaitingConfirmation
-            ? "本次兑换已经生成待确认执行请求，下一步请先完成 Agent Wallet 确认，再回到对话主线程继续广播与订单状态查询。"
-            : isSwapSettled
-              ? `本次兑换已经进入完成回执阶段，订单号 ${executeResult.orderId}，你可以继续查看链上结果与成交细节。`
-              : isSwapFailed
-                ? "本次兑换未能完成执行，请重新检查余额、滑点与链路状态后再次发起。"
-                : `本次兑换已经提交至执行链路，订单号 ${executeResult.orderId}，当前仍在等待链上进一步确认。`,
-          tone: isAwaitingConfirmation ? "warning" : isSwapFailed ? "danger" : "success",
-          meta: isAwaitingConfirmation
-            ? "当前已构建待确认执行请求，Agent Wallet 确认入口已接入卡片动作按钮。"
-            : executeResult.txHash
-              ? `链上回执：${executeResult.txHash}`
-              : isSwapFailed
-                ? "当前未返回有效链上回执，后续将结合持久化任务与轮询恢复进一步补强。"
-                : "当前暂未返回链上回执，系统会在后续接入轮询后继续更新。",
-        });
-      }
-
-      return swapMessages;
-    },
-    [],
-  );
-
-  const sendMessage = useCallback(
-    async (rawText?: string) => {
-      const content = (rawText ?? input).trim();
-      if (!content || submitting) {
+      if (triggeredIntent.kind === "swap") {
+        const swapMessages = await runSwapFlow(content, wallet, seed, triggeredIntent);
+        appendMessages(swapMessages);
         return;
       }
-
-      setErrorText("");
-      setInput("");
-      appendMessages([
-        {
-          id: `user-${Date.now()}`,
-          role: "user",
-          content,
-        },
-      ]);
-      setSubmitting(true);
-
-      try {
-        const walletRaw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
-          const wallet = parseWallet(walletRaw);
-
-        const seed = Date.now();
-        const triggeredIntent = detectAgentIntent(content);
-        const confirmCard = buildConfirmCard(triggeredIntent);
-
-        if (triggeredIntent.kind === "transfer") {
-          appendMessages([
-            {
-              id: `assistant-${seed}-transfer-rule`,
-              role: "assistant",
-              title: confirmCard?.title ?? "转账确认",
-              content:
-                confirmCard?.description ??
-                `已识别转账请求：向 ${triggeredIntent.payload.address} 发送 ${triggeredIntent.payload.amount} ${triggeredIntent.payload.symbol}。`,
-              meta: `已命中固定转账触发规则（${triggeredIntent.source}）`,
-            },
-            ...buildTransferMessages(triggeredIntent.payload, wallet, seed),
-          ]);
-          return;
-        }
-
-        if (triggeredIntent.kind === "swap") {
-          const swapMessages = await runSwapFlow(content, wallet, seed, triggeredIntent);
-          appendMessages([
-            {
-              id: `assistant-${seed}-swap-rule`,
-              role: "assistant",
-              title: confirmCard?.title ?? "交易确认",
-              content:
-                confirmCard?.description ??
-                `已识��兑换请求：将 ${triggeredIntent.payload.amount} ${triggeredIntent.payload.fromSymbol} 兑换为 ${triggeredIntent.payload.toSymbol}。`,
-              meta: `已命中固定交易触发规则（${triggeredIntent.source}）`,
-            },
-            ...swapMessages,
-          ]);
-          return;
-        }
-
-        if (triggeredIntent.kind === "price_query") {
-          const snapshot = await getMarketSnapshotByMcp(triggeredIntent.payload.symbol);
-          appendMessages(buildPriceMessages(snapshot, seed));
-          return;
-        }
-
-        if (triggeredIntent.kind === "portfolio_query") {
-          if (!wallet) {
-            throw new Error("当前没有可用的钱包，请先完成邮箱登录并自动创建 Agent Wallet。");
-          }
-          const assets = await getAccountAssets(wallet);
-          appendMessages(buildAssetMessages(assets, seed));
-          return;
-        }
-
-        if (triggeredIntent.kind === "earn_query") {
-          const token = triggeredIntent.payload?.symbol ?? extractDeFiToken(content);
-          const products = await searchDeFiProductsByMcp(token, "ethereum", "SINGLE_EARN");
-          if (!products.length) {
-            throw new Error(`暂未检索到 ${token} 相关的可用赚币产品，请稍后再试。`);
-          }
-          appendMessages(buildDeFiMessages(token, products, seed));
-          return;
-        }
-
-        const priceSymbol = extractPriceSymbol(content);
-        if (priceSymbol) {
-          const snapshot = await getMarketSnapshotByMcp(priceSymbol);
-          appendMessages(buildPriceMessages(snapshot, seed));
-          return;
-        }
-
-        if (isAssetIntent(content)) {
-          if (!wallet) {
-            throw new Error("当前没有可用的钱包，请先完成邮箱登录并自动创建 Agent Wallet。");
-          }
-          const assets = await getAccountAssets(wallet);
-          appendMessages(buildAssetMessages(assets, seed));
-          return;
-        }
-
-        if (isDeFiIntent(content)) {
-          const token = extractDeFiToken(content);
-          const products = await searchDeFiProductsByMcp(token, "ethereum", "SINGLE_EARN");
-          if (!products.length) {
-            throw new Error(`暂未检索到 ${token} 相关的可用赚币产品，请稍后再试。`);
-          }
-          appendMessages(buildDeFiMessages(token, products, seed));
-          return;
-        }
-
-        if (isSmartMoneyIntent(content)) {
-          const wallets = await getSmartMoneyLeaderboardByMcp("solana");
-          if (!wallets.length) {
-            throw new Error("暂未拉取到可展示的聪明钱榜单，请稍后再试。");
-          }
-          appendMessages(buildSmartMoneyMessages(wallets, seed));
-          return;
-        }
-
-        if (isMemeIntent(content)) {
-          const tokens = await getMemeScanListByMcp("solana");
-          if (!tokens.length) {
-            throw new Error("暂未拉取到可展示的热门 Meme 代币，请稍后再试。");
-          }
-          appendMessages(buildMemeMessages(tokens, seed));
-          return;
-        }
-
-        const response = await parseChatAiIntent({
-          message: content,
-          wallet: wallet ?? undefined,
-        });
-        if (
-          "intent" in response &&
-          response.intent &&
-          response.intent.action === "swap"
-        ) {
-          const swapMessages = await runSwapFlow(
-            response.intent.swapMessage || content,
-            wallet,
-            seed,
-            undefined,
-          );
-          appendMessages([
-            {
-              id: `assistant-${seed}-swap-reply`,
-              role: "assistant",
-              title: "AI 意图识别",
-              content: response.intent.reply,
-              meta: "已由服务端返回兑换意图",
-            },
-            ...swapMessages,
-          ]);
-          return;
-        }
-
-        appendMessages(buildAssistantMessages(response, seed));
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "消息发送失败，请稍后再试。";
-        setErrorText(message);
-        appendMessages([
-          {
-            id: `assistant-error-${Date.now()}`,
-            role: "assistant",
-            title: "当前请求未完成",
-            content: message,
-            tone: "danger",
-            meta: "请先确认已登录钱包，并检查网络或服务连接状态",
-          },
-        ]);
-      } finally {
-        setSubmitting(false);
+      if (triggeredIntent.kind === "price_query") {
+        const snapshot = await getMarketSnapshotByMcp(triggeredIntent.payload.symbol);
+        appendMessages(buildPriceMessages(snapshot, seed));
+        return;
       }
-    },
-    [appendMessages, input, runSwapFlow, submitting],
-  );
+      if (triggeredIntent.kind === "portfolio_query") {
+        if (!wallet) throw new Error("请先完成登录并创建 Agent Wallet。");
+        const assets = await getAccountAssets(wallet);
+        appendMessages(buildAssetMessages(assets, seed));
+        return;
+      }
+      if (triggeredIntent.kind === "earn_query") {
+        const token = triggeredIntent.payload?.symbol ?? extractDeFiToken(content);
+        const products = await searchDeFiProductsByMcp(token, "ethereum", "SINGLE_EARN");
+        if (!products.length) throw new Error(`暂未检索到 ${token} 相关的赚币产品。`);
+        appendMessages(buildDeFiMessages(token, products, seed));
+        return;
+      }
+      const priceSymbol = extractPriceSymbol(content);
+      if (priceSymbol) { appendMessages(buildPriceMessages(await getMarketSnapshotByMcp(priceSymbol), seed)); return; }
+      if (isAssetIntent(content)) {
+        if (!wallet) throw new Error("请先完成登录并创建 Agent Wallet。");
+        appendMessages(buildAssetMessages(await getAccountAssets(wallet), seed)); return;
+      }
+      if (isDeFiIntent(content)) {
+        const token = extractDeFiToken(content);
+        const products = await searchDeFiProductsByMcp(token, "ethereum", "SINGLE_EARN");
+        if (!products.length) throw new Error(`暂未检索到 ${token} 相关的赚币产品。`);
+        appendMessages(buildDeFiMessages(token, products, seed)); return;
+      }
+      if (isSmartMoneyIntent(content)) {
+        const wallets = await getSmartMoneyLeaderboardByMcp("solana");
+        if (!wallets.length) throw new Error("暂未拉取到聪明钱榜单。");
+        appendMessages(buildSmartMoneyMessages(wallets, seed)); return;
+      }
+      if (isMemeIntent(content)) {
+        const tokens = await getMemeScanListByMcp("solana");
+        if (!tokens.length) throw new Error("暂未拉取到热门 Meme 代币。");
+        appendMessages(buildMemeMessages(tokens, seed)); return;
+      }
+      const response = await parseChatAiIntent({ message: content, wallet: wallet ?? undefined });
+      if ("intent" in response && response.intent && response.intent.action === "swap") {
+        const swapMessages = await runSwapFlow(response.intent.swapMessage || content, wallet, seed, undefined);
+        appendMessages([{ id: `assistant-${seed}-swap-reply`, role: "assistant", content: response.intent.reply }, ...swapMessages]);
+        return;
+      }
+      appendMessages(buildAssistantMessages(response, seed));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "消息发送失败，请稍后再试。";
+      setErrorText(message);
+      appendMessages([{ id: `assistant-error-${Date.now()}`, role: "assistant", content: message, tone: "danger" }]);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [appendMessages, input, runSwapFlow, submitting]);
 
+  /* ── Signature callback effects (unchanged logic) ── */
   useEffect(() => {
     const contextId = typeof params.sigContextId === "string" ? params.sigContextId : "";
     const flow = params.sigFlow === "transfer" ? "transfer" : "swap";
@@ -1319,50 +612,15 @@ export default function ChatScreen() {
     const txHash = typeof params.sigTxHash === "string" ? params.sigTxHash : "";
     const error = typeof params.sigError === "string" ? params.sigError : "";
     const signatureKey = contextId ? `${contextId}:${status}:${txHash || signedTx || jitoSignedTx || error}` : "";
-
-    if (!isFromSignatureCallback || !signatureKey || lastSignatureKeyRef.current === signatureKey) {
-      return;
-    }
-
+    if (!isFromSignatureCallback || !signatureKey || lastSignatureKeyRef.current === signatureKey) return;
     lastSignatureKeyRef.current = signatureKey;
-
     const flowLabel = flow === "transfer" ? "转账" : "兑换";
     const assistantMessages: ChatMessage[] = [];
-
     assistantMessages.push({
-      id: `assistant-signature-${signatureKey}-entry`,
-      role: "assistant",
-      title: `${flowLabel}确认结果已返回`,
-      content:
-        status === "cancelled"
-          ? `我已经收到你刚刚取消的${flowLabel}确认结果。当前不会继续广播，我会先回到对话主线程，帮你重新检查条件与风险。`
-          : status === "error" || error
-            ? `我已经收到${flowLabel}确认回传异常，当前先不继续执行。你可以继续让我复核条件，或者稍后重新发起。`
-            : `我已经接住这次${flowLabel}确认结果，并已恢复到对话主线程。下一步会继续往广播与链上回执方向承接。`,
-      meta: txHash
-        ? `当前回执：${txHash}`
-        : signedTx || jitoSignedTx
-          ? "已接收到执行确认结果，广播续跑能力正在接入中"
-          : "当前仅完成回调承接，后续会继续接上广播续跑与订单状态更新",
+      id: `assistant-signature-${signatureKey}-entry`, role: "assistant",
+      content: status === "cancelled" ? `${flowLabel}确认已取消。` : status === "error" || error ? `${flowLabel}确认异常。` : `${flowLabel}确认结果已返回。`,
       tone: status === "error" || error ? "danger" : status === "cancelled" ? "warning" : "success",
     });
-
-    if (status !== "cancelled") {
-      assistantMessages.push({
-        id: `assistant-signature-${signatureKey}-progress`,
-        role: "assistant",
-        title: `${flowLabel}主线程续跑状态`,
-        content:
-          status === "error" || error
-            ? `本次${flowLabel}确认结果已被记录，但当前回调阶段返回了异常信息：${error || "未知错误"}。建议先重新核对参数后再继续。`
-            : signedTx || jitoSignedTx
-              ? `当前已经收到执行确认结果，下一步应继续把交易请求送入广播链路，并在对话中持续更新订单与回执状态。`
-              : `当前应用已经成功接住回调，但尚未收到完整执行载荷；后续将继续补齐兼容回调层与广播续跑。`,
-        meta: signedTx || jitoSignedTx ? `执行载荷：${signedTx ? "signedTx" : "jitoSignedTx"} 已返回` : undefined,
-        tone: status === "error" || error ? "warning" : "default",
-      });
-    }
-
     appendMessages(assistantMessages);
   }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigFlow, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus, params.sigTxHash]);
 
@@ -1375,213 +633,50 @@ export default function ChatScreen() {
     const status = typeof params.sigStatus === "string" ? params.sigStatus : "returned";
     const error = typeof params.sigError === "string" ? params.sigError : "";
     const resumeKey = contextId ? `${contextId}:${flow}:${status}:${txHash || signedTx || jitoSignedTx || error}` : "";
-
-    if (
-      !isFromSignatureCallback ||
-      !contextId ||
-      !resumeKey ||
-      lastSignatureResumeKeyRef.current === resumeKey ||
-      status === "cancelled" ||
-      status === "error" ||
-      error ||
-      (!signedTx && !jitoSignedTx)
-    ) {
-      return;
-    }
-
+    if (!isFromSignatureCallback || !contextId || !resumeKey || lastSignatureResumeKeyRef.current === resumeKey || status === "cancelled" || status === "error" || error || (!signedTx && !jitoSignedTx)) return;
     lastSignatureResumeKeyRef.current = resumeKey;
-
     let active = true;
-
     const resumeSignedSwap = async () => {
       const pending = await getPendingSignatureContext();
-      if (!active || !pending || pending.id !== contextId || pending.flow !== "swap" || !pending.swap) {
-        return;
-      }
-
-      appendMessages([
-        {
-          id: `assistant-signature-${resumeKey}-resume-start`,
-          role: "assistant",
-          title: "已进入执行续跑",
-          content: "我已经拿到你刚刚确认的兑换交易，正在继续执行广播与订单回执查询。",
-          meta: "当前会沿用之前已整理好的兑换参数继续处理",
-          tone: "default",
-        },
-      ]);
-
+      if (!active || !pending || pending.id !== contextId || pending.flow !== "swap" || !pending.swap) return;
+      appendMessages([{ id: `assistant-signature-${resumeKey}-resume-start`, role: "assistant", content: "正在继续执行广播与订单回执查询..." }]);
       try {
-        const executeResult = await executeOnchainSwap({
-          ...pending.swap,
-          signedTx: signedTx || undefined,
-          jitoSignedTx: jitoSignedTx || undefined,
-        });
-
+        const executeResult = await executeOnchainSwap({ ...pending.swap, signedTx: signedTx || undefined, jitoSignedTx: jitoSignedTx || undefined });
         if (!active) return;
-
-        appendMessages([
-          {
-            id: `assistant-signature-${resumeKey}-resume-result`,
-            role: "assistant",
-            title: executeResult.phase === "success"
-              ? "兑换已进入完成回执"
-              : executeResult.phase === "failed"
-                ? "兑换执行失败"
-                : "兑换已继续执行",
-            content:
-              executeResult.phase === "success"
-                ? `我已经继续完成这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，你可以继续查看链上结果与成交细节。`
-                : executeResult.phase === "failed"
-                  ? "这笔兑换在继续执行时未能成功完成，请重新检查余额、滑点和链路状态后再次尝试。"
-                  : `我已经继续广播这笔兑换，当前订单号 ${executeResult.orderId || "待补充"}，后续会继续等待链上结果更新。`,
-            meta: executeResult.txHash
-              ? `链上回执：${executeResult.txHash}`
-              : executeResult.progress?.length
-                ? executeResult.progress.map((item) => `${item.label}：${item.status === "done" ? "完成" : "处理中"}`).join(" · ")
-                : executeResult.phase === "failed"
-                  ? "当前未返回有效链上回执，后续将结合持久化任务与轮询恢复继续补强。"
-                  : "当前暂未返回链上回执，后续会继续补齐订单轮询。",
-            tone: executeResult.phase === "success" ? "success" : executeResult.phase === "failed" ? "danger" : "default",
-          },
-        ]);
-
-        const canPollOrder =
-          executeResult.phase === "executing" && Boolean((executeResult.txHash || executeResult.orderId) && pending.swap?.chainIndex);
-
+        appendMessages([{ id: `assistant-signature-${resumeKey}-resume-result`, role: "assistant", content: executeResult.phase === "success" ? `兑换完成，订单号 ${executeResult.orderId || "待补充"}。` : executeResult.phase === "failed" ? "兑换执行失败，请重试。" : `已提交执行，订单号 ${executeResult.orderId || "待补充"}。`, tone: executeResult.phase === "success" ? "success" : executeResult.phase === "failed" ? "danger" : "default" }]);
+        const canPollOrder = executeResult.phase === "executing" && Boolean((executeResult.txHash || executeResult.orderId) && pending.swap?.chainIndex);
         if (canPollOrder) {
           await new Promise((resolve) => setTimeout(resolve, 1200));
-          const ordersResult = await getOnchainExecutionReceipt({
-            address: pending.swap.broadcastAddress || pending.swap.userWalletAddress,
-            chainIndex: pending.swap.chainIndex,
-            orderId: executeResult.orderId,
-            txHash: executeResult.txHash || undefined,
-            limit: "1",
-          });
-
+          const ordersResult = await getOnchainExecutionReceipt({ address: pending.swap.broadcastAddress || pending.swap.userWalletAddress, chainIndex: pending.swap.chainIndex, orderId: executeResult.orderId, txHash: executeResult.txHash || undefined, limit: "1" });
           if (!active) return;
-
           const order = (ordersResult.data?.[0] ?? null) as Record<string, unknown> | null;
           const txStatus = typeof order?.txStatus === "string" ? order.txStatus : typeof order?.txstatus === "string" ? order.txstatus : "";
-          const receiptStatus = typeof order?.status === "string"
-            ? order.status.toLowerCase()
-            : txStatus === "2"
-              ? "success"
-              : txStatus === "4" || txStatus === "5"
-                ? "failure"
-                : "pending";
-          const polledTxHash = typeof order?.txHash === "string" ? order.txHash : executeResult.txHash;
+          const receiptStatus = typeof order?.status === "string" ? order.status.toLowerCase() : txStatus === "2" ? "success" : txStatus === "4" || txStatus === "5" ? "failure" : "pending";
           const isSettled = receiptStatus === "success";
           const isFailed = receiptStatus === "failure";
-
-          appendMessages([
-            {
-              id: `assistant-signature-${resumeKey}-poll-result`,
-              role: "assistant",
-              title: isSettled ? "订单状态已更新" : isFailed ? "订单执行失败" : "订单仍在处理中",
-              content: isSettled
-                ? `我已经查到这笔兑换的最新订单状态，当前已进入完成回执阶段，订单号 ${executeResult.orderId}。`
-                : isFailed
-                  ? `我已经查到这笔兑换的最新回执，当前执行失败，订单号 ${executeResult.orderId || "待补充"}。`
-                  : `我已经重新查询这笔兑换的订单状态，当前仍在链上处理中，订单号 ${executeResult.orderId || "待补充"}。`,
-              meta: polledTxHash
-                ? `链上回执：${polledTxHash}`
-                : "当前订单查询已完成，但暂未返回新的链上回执。",
-              tone: isSettled ? "success" : isFailed ? "danger" : "default",
-            },
-          ]);
-
-          if (isSettled) {
-            await clearPendingSignatureContext();
-          }
+          appendMessages([{ id: `assistant-signature-${resumeKey}-poll-result`, role: "assistant", content: isSettled ? `订单已完成，订单号 ${executeResult.orderId}。` : isFailed ? `订单执行失败。` : `订单处理中...`, tone: isSettled ? "success" : isFailed ? "danger" : "default" }]);
+          if (isSettled) await clearPendingSignatureContext();
           return;
         }
-
         await clearPendingSignatureContext();
       } catch (resumeError) {
         if (!active) return;
-
-        appendMessages([
-          {
-            id: `assistant-signature-${resumeKey}-resume-error`,
-            role: "assistant",
-            title: "广播续跑暂未完成",
-            content:
-              resumeError instanceof Error
-                ? resumeError.message
-                : "已收到签名结果，但广播续跑暂未完成，请稍后重试。",
-            meta: "当前已保留待续跑上下文，后续仍可继续补执行恢复能力",
-            tone: "warning",
-          },
-        ]);
+        appendMessages([{ id: `assistant-signature-${resumeKey}-resume-error`, role: "assistant", content: resumeError instanceof Error ? resumeError.message : "广播续跑暂未完成。", tone: "warning" }]);
       }
     };
-
     const resumeSignedTransfer = async () => {
       const pending = await getPendingSignatureContext();
-      if (!active || !pending || pending.id !== contextId || pending.flow !== "transfer" || !pending.transfer) {
-        return;
-      }
-
-      const inferredChainKind: DexChainKind = pending.transfer.toAddress.startsWith("0x") ? "evm" : "solana";
-      const transferProgress = [
-        { key: "prepare", label: "已整理转账请求", status: "done" as const },
-        { key: "confirm", label: "确认结果已返回", status: "done" as const },
-        {
-          key: "broadcast",
-          label: txHash ? "已记录链上回执，等待确认" : "广播能力待接入",
-          status: txHash ? ("done" as const) : ("pending" as const),
-        },
-      ];
-
-      appendMessages([
-        {
-          id: `assistant-signature-${resumeKey}-transfer-resume-start`,
-          role: "assistant",
-          title: "已进入转账续跑",
-          content: txHash
-            ? "我已经收到这笔转账���确认结果与链上回执，正在把结果承接回对话主线程。"
-            : "我已经拿到你刚刚确认的转账交易，正在恢复主线程并更新当前执行阶段。",
-          meta: txHash
-            ? `链上回执：${txHash}`
-            : "当前真实转账广播接口尚未接入，先以主线程状态承接本次确认结果",
-          tone: txHash ? "success" : "default",
-        },
-        {
-          id: `assistant-signature-${resumeKey}-transfer-resume-result`,
-          role: "assistant",
-          title: txHash ? "转账确认结果已记录" : "转账已恢复到待广播阶段",
-          content: txHash
-            ? `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经回传链上回执，我已先在主线程记录本次结果，后续会继续接上更完整的确认状态更新。`
-            : `这笔 ${pending.transfer.amount} ${pending.transfer.symbol} 转账已经完成确认回传，我已先将执行进度更新为“已确认、待广播”。由于当前仍缺少统一广播接口，我会把真实广播接入登记为下一步开发项。`,
-          meta: `${maskAddress(pending.transfer.fromAddress)} → ${maskAddress(pending.transfer.toAddress)}`,
-          tone: txHash ? "success" : "warning",
-          card: {
-            kind: "transfer",
-            payload: {
-              amount: pending.transfer.amount,
-              symbol: pending.transfer.symbol,
-              chainKind: pending.chainKind,
-              fromAddress: pending.transfer.fromAddress,
-              toAddress: pending.transfer.toAddress,
-              phase: txHash ? "executing" : "awaiting_confirmation",
-              progress: transferProgress,
-            },
-          },
-        },
-      ]);
-
+      if (!active || !pending || pending.id !== contextId || pending.flow !== "transfer" || !pending.transfer) return;
+      appendMessages([{
+        id: `assistant-signature-${resumeKey}-transfer-resume-result`, role: "assistant",
+        content: txHash ? `转账已返回链上回执。` : `转账确认已完成。`,
+        tone: txHash ? "success" : "default",
+        card: { kind: "transfer", payload: { amount: pending.transfer.amount, symbol: pending.transfer.symbol, chainKind: pending.chainKind, fromAddress: pending.transfer.fromAddress, toAddress: pending.transfer.toAddress, phase: txHash ? "executing" : "awaiting_confirmation", progress: [{ key: "prepare", label: "已整理转账请求", status: "done" as const }, { key: "confirm", label: "确认结果已返回", status: "done" as const }, { key: "broadcast", label: txHash ? "已记录链上回执" : "广播待接入", status: txHash ? "done" as const : "pending" as const }] } },
+      }]);
       await clearPendingSignatureContext();
     };
-
-    if (flow === "transfer") {
-      void resumeSignedTransfer();
-    } else {
-      void resumeSignedSwap();
-    }
-
-    return () => {
-      active = false;
-    };
+    if (flow === "transfer") void resumeSignedTransfer(); else void resumeSignedSwap();
+    return () => { active = false; };
   }, [appendMessages, isFromSignatureCallback, params.sigContextId, params.sigError, params.sigFlow, params.sigJitoSignedTx, params.sigSignedTx, params.sigStatus, params.sigTxHash]);
 
   useEffect(() => {
@@ -1591,64 +686,232 @@ export default function ChatScreen() {
     const source = typeof params.source === "string" ? params.source : "";
     const entryText = draft || query;
     const entryKey = draftKey || (query ? `${source || "external"}:${query}` : "");
-
-    if (!entryText || !entryKey || lastDraftKeyRef.current === entryKey) {
-      return;
-    }
-
+    if (!entryText || !entryKey || lastDraftKeyRef.current === entryKey) return;
     lastDraftKeyRef.current = entryKey;
     void sendMessage(entryText);
   }, [params.draft, params.draftKey, params.q, params.source, sendMessage]);
 
+  /* ══════════════════════════════════════════════════════════════
+   *  RENDER — Grok-style minimal chat with rich inline cards
+   * ══════════════════════════════════════════════════════════════ */
+
+  const renderCard = useCallback((card: ChatCard) => {
+    switch (card.kind) {
+      case "price": {
+        const s = card.payload.snapshot;
+        const isUp = (s.change24h ?? 0) >= 0;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.price.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.price.accent }]} />
+              <Text style={styles.cardLabel}>{s.symbol}</Text>
+              <Text style={[styles.cardBadge, { color: isUp ? POSITIVE : NEGATIVE }]}>{formatChange(s.change24h)}</Text>
+            </View>
+            <Text style={styles.cardHero}>{formatPrice(s.price)}</Text>
+            <View style={styles.cardMetaRow}>
+              <Text style={styles.cardMeta}>{"24h 量 "}{formatVolume(s.volume24h)}</Text>
+              <Text style={styles.cardMeta}>{formatSnapshotTime(s.updateTime)}</Text>
+            </View>
+            <View style={styles.cardActions}>
+              <Pressable style={styles.cardBtn} onPress={() => void sendMessage(`最近大户在买什么 ${s.symbol}`)}>
+                <Text style={styles.cardBtnText}>大户动向</Text>
+              </Pressable>
+              <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void sendMessage(`把 100 USDT 换成 ${s.symbol}`)}>
+                <Text style={styles.cardBtnPrimaryText}>买入</Text>
+              </Pressable>
+            </View>
+          </View>
+        );
+      }
+      case "asset": {
+        const a = card.payload.assets;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.asset.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.asset.accent }]} />
+              <Text style={styles.cardLabel}>资产总览</Text>
+            </View>
+            <Text style={styles.cardHero}>{formatUsdCompact(Number(a.totalAssetValue))}</Text>
+            {a.walletAddresses.slice(0, 3).map((chain) => {
+              const chainTotal = chain.assets.reduce((sum, asset) => sum + Number(asset.valueUsd || 0), 0);
+              return (
+                <View key={`${chain.chainIndex}-${chain.address}`} style={styles.listRow}>
+                  <View>
+                    <Text style={styles.listTitle}>{chain.chainName}</Text>
+                    <Text style={styles.listSub}>{maskAddress(chain.address)}</Text>
+                  </View>
+                  <Text style={styles.listValue}>{formatUsdCompact(chainTotal)}</Text>
+                </View>
+              );
+            })}
+            <View style={styles.cardActions}>
+              <Pressable style={styles.cardBtn} onPress={() => router.push("/(tabs)/wallet")}>
+                <Text style={styles.cardBtnText}>资产明细</Text>
+              </Pressable>
+              <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void sendMessage("最近大户在买什么")}>
+                <Text style={styles.cardBtnPrimaryText}>市场机会</Text>
+              </Pressable>
+            </View>
+          </View>
+        );
+      }
+      case "defi": {
+        const d = card.payload;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.defi.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.defi.accent }]} />
+              <Text style={styles.cardLabel}>{d.token} 赚币</Text>
+            </View>
+            {d.products.slice(0, 3).map((p) => (
+              <View key={p.id} style={styles.listRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>{p.name}</Text>
+                  <Text style={styles.listSub}>{p.platform} · {p.chain}</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={[styles.listValue, { color: POSITIVE }]}>{p.apr.toFixed(2)}%</Text>
+                  <Text style={styles.listSub}>TVL {formatUsdCompact(Number(p.tvl || 0))}</Text>
+                </View>
+              </View>
+            ))}
+            <Pressable style={[styles.cardBtn, styles.cardBtnPrimary, { alignSelf: "stretch" }]} onPress={() => void sendMessage(`继续找 ${d.token} 的赚币产品`)}>
+              <Text style={styles.cardBtnPrimaryText}>查看更多</Text>
+            </Pressable>
+          </View>
+        );
+      }
+      case "smart-money": {
+        const sm = card.payload;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.smartMoney.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.smartMoney.accent }]} />
+              <Text style={styles.cardLabel}>聪明钱榜单</Text>
+            </View>
+            {sm.wallets.slice(0, 3).map((w, i) => (
+              <View key={`${w.walletAddress}-${i}`} style={styles.listRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>#{i + 1} {maskAddress(w.walletAddress)}</Text>
+                  <Text style={styles.listSub}>胜率 {Number(w.winRatePercent || 0).toFixed(1)}% · 交易 {w.txs}</Text>
+                </View>
+                <Text style={[styles.listValue, { color: POSITIVE }]}>{formatUsdCompact(Number(w.realizedPnlUsd || 0))}</Text>
+              </View>
+            ))}
+            <Pressable style={[styles.cardBtn, styles.cardBtnPrimary, { alignSelf: "stretch" }]} onPress={() => void sendMessage("最近有什么热门Meme币")}>
+              <Text style={styles.cardBtnPrimaryText}>热门 Meme</Text>
+            </Pressable>
+          </View>
+        );
+      }
+      case "meme": {
+        const m = card.payload;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.meme.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.meme.accent }]} />
+              <Text style={styles.cardLabel}>热门 Meme</Text>
+            </View>
+            {m.tokens.slice(0, 3).map((t, i) => (
+              <View key={`${t.tokenContractAddress}-${i}`} style={styles.listRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>{t.tokenSymbol}</Text>
+                  <Text style={styles.listSub}>持币 {t.holders || "--"} · 聪明钱 {t.smartMoneyBuys || "0"}</Text>
+                </View>
+                <Text style={[styles.listValue, { color: CARD_TINTS.meme.accent }]}>{formatUsdCompact(Number(t.marketCap || 0))}</Text>
+              </View>
+            ))}
+          </View>
+        );
+      }
+      case "swap": {
+        const sc = card.payload;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.swap.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.swap.accent }]} />
+              <Text style={styles.cardLabel}>{sc.fromSymbol} → {sc.toSymbol}</Text>
+              <Text style={[styles.cardBadge, { color: CARD_TINTS.swap.accent }]}>{sc.chainKind === "solana" ? "Solana" : "Ethereum"}</Text>
+            </View>
+            <Text style={styles.cardHero}>{sc.amount} {sc.fromSymbol}</Text>
+            <View style={styles.cardMetaRow}>
+              <Text style={styles.cardMeta}>预估 {sc.estimatedReceive} {sc.toSymbol}</Text>
+              <Text style={styles.cardMeta}>{sc.estimatedPrice}</Text>
+            </View>
+            <View style={styles.cardActions}>
+              <Pressable style={styles.cardBtn} onPress={() => router.push("/(tabs)/wallet")}>
+                <Text style={styles.cardBtnText}>钱包明细</Text>
+              </Pressable>
+              {sc.phase === "awaiting_confirmation" && sc.signatureRequest ? (
+                <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void handleSwapSignature(sc)}>
+                  <Text style={styles.cardBtnPrimaryText}>确认执行</Text>
+                </Pressable>
+              ) : (
+                <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => router.push("/(tabs)/wallet")}>
+                  <Text style={styles.cardBtnPrimaryText}>查看结果</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        );
+      }
+      case "transfer": {
+        const tc = card.payload;
+        return (
+          <View style={[styles.card, { backgroundColor: CARD_TINTS.transfer.bg }]}>
+            <View style={styles.cardHead}>
+              <View style={[styles.cardDot, { backgroundColor: CARD_TINTS.transfer.accent }]} />
+              <Text style={styles.cardLabel}>转账 {tc.amount} {tc.symbol}</Text>
+            </View>
+            <View style={styles.cardMetaRow}>
+              <Text style={styles.cardMeta}>{maskAddress(tc.fromAddress)} → {maskAddress(tc.toAddress)}</Text>
+            </View>
+            <View style={styles.cardActions}>
+              <Pressable style={[styles.cardBtn, styles.cardBtnPrimary]} onPress={() => void handleTransferSignature(tc)}>
+                <Text style={styles.cardBtnPrimaryText}>确认执行</Text>
+              </Pressable>
+            </View>
+          </View>
+        );
+      }
+    }
+  }, [handleSwapSignature, handleTransferSignature, router, sendMessage]);
+
   return (
     <ScreenContainer
-      className="bg-[#F5F5F7]"
-      safeAreaClassName="bg-[#F5F5F7]"
-      containerClassName="bg-[#F5F5F7]"
+      className="bg-white"
+      safeAreaClassName="bg-white"
+      containerClassName="bg-white"
     >
-      <View style={styles.fixedHeaderWrap}>
-        <AppHeader
-          onWalletPress={() => router.push("/(tabs)/wallet")}
-          onRightPress={() => router.push("/(tabs)/profile")}
-          centerContent={
-            <Text style={styles.headerBrandText}>Dolphin</Text>
-          }
-        />
-      </View>
+      <AppHeader
+        onWalletPress={() => router.push("/(tabs)/wallet")}
+        onRightPress={() => router.push("/(tabs)/profile")}
+        centerContent={<Text style={styles.headerBrand}>Dolphin</Text>}
+      />
 
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={styles.chatContent}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           messages.length <= 1 ? (
-            <View style={styles.welcomeBlock}>
-              <View style={styles.welcomeLogoWrap}>
-                <LinearGradient
-                  colors={["#7C3AED", "#6D28D9"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.welcomeLogo}
-                >
-                  <MaterialCommunityIcons name="dolphin" size={32} color="#FFFFFF" />
-                </LinearGradient>
+            <View style={styles.welcome}>
+              <View style={styles.welcomeIcon}>
+                <MaterialCommunityIcons name="dolphin" size={28} color="#FFFFFF" />
               </View>
               <Text style={styles.welcomeTitle}>{"Hi, I'm Dolphin"}</Text>
-              <Text style={styles.welcomeSubtitle}>{"你的链上 AI 助手，随时为你服务"}</Text>
-
-              <View style={styles.suggestionsWrap}>
-                {suggestions.map((item) => (
+              <Text style={styles.welcomeSub}>你的链上 AI 助手</Text>
+              <View style={styles.suggestGrid}>
+                {suggestions.map((s) => (
                   <Pressable
-                    key={item}
-                    onPress={() => void sendMessage(item)}
-                    style={({ pressed }) => [
-                      styles.suggestionChip,
-                      pressed && styles.suggestionChipPressed,
-                    ]}
+                    key={s.label}
+                    onPress={() => void sendMessage(s.label)}
+                    style={({ pressed }) => [styles.suggestCard, pressed && { opacity: 0.7, transform: [{ scale: 0.97 }] }]}
                   >
-                    <Text style={styles.suggestionText}>{item}</Text>
+                    <MaterialCommunityIcons name={s.icon} size={18} color={ManusColors.primary} />
+                    <Text style={styles.suggestText}>{s.label}</Text>
                   </Pressable>
                 ))}
               </View>
@@ -1657,420 +920,16 @@ export default function ChatScreen() {
         }
         renderItem={({ item }) => {
           const isUser = item.role === "user";
-          const toneStyle =
-            item.tone === "success"
-              ? styles.assistantSuccess
-              : item.tone === "danger"
-                ? styles.assistantDanger
-                : item.tone === "warning"
-                  ? styles.assistantWarning
-                  : undefined;
-
           return (
-            <View
-              style={[
-                styles.bubbleRow,
-                isUser ? styles.userRow : styles.assistantRow,
-              ]}
-            >
-              <View
-                style={[
-                  styles.bubble,
-                  isUser ? styles.userBubble : styles.assistantBubble,
-                  !isUser && toneStyle,
-                ]}
-              >
-                {item.title ? (
-                  <Text style={[styles.bubbleTitle, isUser && styles.userText]}>{item.title}</Text>
-                ) : null}
-                <Text style={[styles.bubbleContent, isUser && styles.userText]}>{item.content}</Text>
-                {item.meta ? (
-                  <Text style={[styles.bubbleMeta, isUser && styles.userMetaText]}>{item.meta}</Text>
-                ) : null}
-
-                {item.card?.kind === "price" ? (() => {
-                  const snapshot = item.card.payload.snapshot;
-                  return (
-                    <LinearGradient
-                      colors={["#FFFFFF", "#F7F3FF", "#EFEAFF"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.richCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={styles.cardIconWrap}>
-                          <MaterialCommunityIcons name="chart-line" size={20} color="#FFFFFF" />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={styles.cardEyebrow}>实时价格</Text>
-                          <Text style={styles.cardTitle}>{snapshot.symbol}</Text>
-                        </View>
-                        <View style={styles.badgeWrap}>
-                          <Text
-                            style={[
-                              styles.badgeText,
-                              { color: (snapshot.change24h ?? 0) >= 0 ? "#86EFAC" : "#FCA5A5" },
-                            ]}
-                          >
-                            {formatChange(snapshot.change24h)}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.priceValue}>{formatPrice(snapshot.price)}</Text>
-
-                      <View style={styles.metricGrid}>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>24h 成交量</Text>
-                          <Text style={styles.metricValue}>{formatVolume(snapshot.volume24h)}</Text>
-                        </View>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>更新时间</Text>
-                          <Text style={styles.metricValue}>{formatSnapshotTime(snapshot.updateTime)}</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryAction} onPress={() => void sendMessage(`最近大户在买什么 ${snapshot.symbol}`)}>
-                          <Text style={styles.secondaryActionText}>查看大户动向</Text>
-                        </Pressable>
-                        <Pressable style={styles.primaryAction} onPress={() => void sendMessage(`继续追踪 ${snapshot.symbol} 行情`)}>
-                          <Text style={styles.primaryActionText}>继续追踪</Text>
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
-
-                {item.card?.kind === "asset" ? (() => {
-                  const assets = item.card.payload.assets;
-                  return (
-                    <LinearGradient
-                      colors={["rgba(255,255,255,0.98)", "rgba(245,247,250,0.96)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.glassCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={[styles.cardIconWrap, styles.assetIconWrap]}>
-                          <MaterialCommunityIcons name="wallet-outline" size={20} color="#7C3AED" />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={[styles.cardEyebrow, styles.darkEyebrow]}>链上资产总览</Text>
-                          <Text style={[styles.cardTitle, styles.darkTitle]}>{formatUsdCompact(Number(assets.totalAssetValue))}</Text>
-                        </View>
-                      </View>
-
-                      {assets.walletAddresses.slice(0, 3).map((chain) => {
-                        const chainTotal = chain.assets.reduce((sum, asset) => sum + Number(asset.valueUsd || 0), 0);
-                        return (
-                          <View key={`${chain.chainIndex}-${chain.address}`} style={styles.assetChainRow}>
-                            <View>
-                              <Text style={styles.assetChainTitle}>{chain.chainName}</Text>
-                              <Text style={styles.assetChainMeta}>{maskAddress(chain.address)}</Text>
-                            </View>
-                            <View style={styles.assetChainRight}>
-                              <Text style={styles.assetChainValue}>{formatUsdCompact(chainTotal)}</Text>
-                              <Text style={styles.assetChainMeta}>{chain.assets.length} 个资产</Text>
-                            </View>
-                          </View>
-                        );
-                      })}
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryActionLight} onPress={() => router.push("/(tabs)/wallet")}>
-                          <Text style={styles.secondaryActionLightText}>查看资产明细</Text>
-                        </Pressable>
-                        <Pressable style={styles.primaryAction} onPress={() => void sendMessage("最近大户在买什么")}>
-                          <Text style={styles.primaryActionText}>看看市场机会</Text>
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
-
-                {item.card?.kind === "defi" ? (() => {
-                  const defiCard = item.card.payload;
-                  return (
-                    <LinearGradient
-                      colors={["rgba(255,255,255,0.98)", "rgba(244,246,250,0.98)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.glassCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={[styles.cardIconWrap, styles.assetIconWrap]}>
-                          <MaterialCommunityIcons name="diamond-stone" size={20} color="#7C3AED" />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={[styles.cardEyebrow, styles.darkEyebrow]}>OKX DeFi 搜索</Text>
-                          <Text style={[styles.cardTitle, styles.darkTitle]}>{defiCard.token} 赚币机会</Text>
-                        </View>
-                      </View>
-
-                      {defiCard.products.slice(0, 3).map((product) => (
-                        <View key={product.id} style={styles.defiRow}>
-                          <View style={styles.defiLeft}>
-                            <Text style={styles.defiName}>{product.name}</Text>
-                            <Text style={styles.defiMeta}>{product.platform} · {product.chain}</Text>
-                          </View>
-                          <View style={styles.defiRight}>
-                            <Text style={styles.defiApy}>{product.apr.toFixed(2)}%</Text>
-                            <Text style={styles.defiMeta}>TVL {formatUsdCompact(Number(product.tvl || 0))}</Text>
-                          </View>
-                        </View>
-                      ))}
-
-                      <Text style={styles.cardHelperText}>
-                        先看收益与体量，再确认风险等级和申购周期，避免只按最高 APR 做决策。
-                      </Text>
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryActionLight} onPress={() => void sendMessage(`继续找 ${defiCard.token} 的赚币产品`)}>
-                          <Text style={styles.secondaryActionLightText}>查看更多</Text>
-                        </Pressable>
-                        <Pressable style={styles.primaryAction} onPress={() => router.push("/(tabs)/earn")}>
-                          <Text style={styles.primaryActionText}>继续确认申购</Text>
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
-
-                {item.card?.kind === "smart-money" ? (() => {
-                  const smartMoneyCard = item.card.payload;
-                  return (
-                    <LinearGradient
-                      colors={["#FFFFFF", "#F6F3FF", "#F0EAFF"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.richCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={styles.cardIconWrap}>
-                          <MaterialCommunityIcons name="account-search-outline" size={20} color="#FFFFFF" />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={styles.cardEyebrow}>聪明钱榜单</Text>
-                          <Text style={styles.cardTitle}>最近大户在买什么</Text>
-                        </View>
-                      </View>
-
-                      {smartMoneyCard.wallets.slice(0, 3).map((wallet, index) => (
-                        <View key={`${wallet.walletAddress}-${index}`} style={styles.smartMoneyRow}>
-                          <View style={styles.smartMoneyLeft}>
-                            <Text style={styles.smartMoneyRank}>#{index + 1} {maskAddress(wallet.walletAddress)}</Text>
-                            <Text style={styles.smartMoneyMeta}>胜率 {Number(wallet.winRatePercent || 0).toFixed(1)}% · 交易 {wallet.txs}</Text>
-                            <Text style={styles.smartMoneyToken}>代表代币 {wallet.topPnlTokenList?.[0]?.tokenSymbol || "--"}</Text>
-                          </View>
-                          <View style={styles.smartMoneyRight}>
-                            <Text style={styles.smartMoneyPnl}>{formatUsdCompact(Number(wallet.realizedPnlUsd || 0))}</Text>
-                            <Text style={styles.smartMoneyMeta}>成交额 {formatUsdCompact(Number(wallet.txVolume || 0))}</Text>
-                          </View>
-                        </View>
-                      ))}
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryAction} onPress={() => void sendMessage("继续追踪聪明钱最近交易") }>
-                          <Text style={styles.secondaryActionText}>继续追踪</Text>
-                        </Pressable>
-                        <Pressable style={styles.primaryGhostAction} onPress={() => void sendMessage("最近有什么热门Meme币") }>
-                          <Text style={styles.primaryActionText}>查看热门 Meme</Text>
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
-
-                {item.card?.kind === "swap" ? (() => {
-                  const swapCard = item.card.payload;
-                  const statusLabel = swapCard.phase === "awaiting_confirmation"
-                    ? "待 Agent Wallet 执行"
-                    : swapCard.phase === "executing"
-                      ? "执行中"
-                      : swapCard.phase === "success"
-                        ? "已写入账号明细"
-                        : swapCard.phase === "failed"
-                          ? "执行失败"
-                          : "意图已整理";
-                  return (
-                    <LinearGradient
-                      colors={["#FFFFFF", "#F8F6FF", "#EEE9FF"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.richCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={styles.cardIconWrap}>
-                          <MaterialCommunityIcons name="swap-horizontal-bold" size={20} color={ManusColors.primary} />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={styles.cardEyebrow}>Agent 已接管兑换意图</Text>
-                          <Text style={styles.cardTitle}>{swapCard.fromSymbol} → {swapCard.toSymbol}</Text>
-                        </View>
-                        <View style={styles.badgeWrap}>
-                          <Text style={[styles.badgeText, { color: ManusColors.primary }]}>
-                            {swapCard.chainKind === "solana" ? "Solana" : "Ethereum"}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.priceValue}>{swapCard.amount} {swapCard.fromSymbol}</Text>
-
-                      <View style={styles.metricGrid}>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>目标代币</Text>
-                          <Text style={styles.metricValue}>{swapCard.toSymbol}</Text>
-                        </View>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>预估到账</Text>
-                          <Text style={styles.metricValue}>{swapCard.estimatedReceive} {swapCard.toSymbol}</Text>
-                        </View>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>预估价格</Text>
-                          <Text style={styles.metricValue}>{swapCard.estimatedPrice}</Text>
-                        </View>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>价格影响</Text>
-                          <Text style={styles.metricValue}>{swapCard.priceImpact}</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.swapProgressPanel}>
-                        <Text style={styles.swapProgressTitle}>结果入口</Text>
-                        <Text style={styles.swapProgressLabel}>{statusLabel}</Text>
-                        <Text style={styles.cardHelperTextOnDark}>
-                          结果统一进入对应币种账号明细；若长时间未达，再由人工客服跟进。
-                        </Text>
-                      </View>
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryAction} onPress={() => router.push("/(tabs)/wallet")}>
-                          <Text style={styles.secondaryActionText}>去钱包看明细</Text>
-                        </Pressable>
-                        {swapCard.phase === "awaiting_confirmation" && swapCard.signatureRequest ? (
-                          <Pressable style={styles.primaryAction} onPress={() => void handleSwapSignature(swapCard)}>
-                            <Text style={styles.primaryActionText}>交给 Agent Wallet 执行</Text>
-                          </Pressable>
-                        ) : (
-                          <Pressable style={styles.primaryGhostAction} onPress={() => router.push("/(tabs)/wallet")}>
-                            <Text style={styles.primaryGhostActionText}>查看账号明细</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
-
-                {item.card?.kind === "transfer" ? (() => {
-                  const transferCard = item.card.payload;
-                  const statusLabel = transferCard.phase === "awaiting_confirmation"
-                    ? "待 Agent Wallet 执行"
-                    : transferCard.phase === "executing"
-                      ? "执行中"
-                      : transferCard.phase === "success"
-                        ? "已写入账号明细"
-                        : transferCard.phase === "failed"
-                          ? "执行失败"
-                          : "意图已整理";
-                  return (
-                    <LinearGradient
-                      colors={["#FFFFFF", "#F8F6FF", "#F2F4F8"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.richCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={styles.cardIconWrap}>
-                          <MaterialCommunityIcons name="send-circle-outline" size={20} color={ManusColors.primary} />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={styles.cardEyebrow}>Agent 已接管转账意图</Text>
-                          <Text style={styles.cardTitle}>{transferCard.amount} {transferCard.symbol}</Text>
-                        </View>
-                        <View style={styles.badgeWrap}>
-                          <Text style={[styles.badgeText, { color: ManusColors.primary }]}>
-                            {transferCard.chainKind === "solana" ? "Solana" : "Ethereum"}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.priceValue}>{transferCard.amount} {transferCard.symbol}</Text>
-
-                      <View style={styles.metricGrid}>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>发送地址</Text>
-                          <Text style={styles.metricValue}>{maskAddress(transferCard.fromAddress)}</Text>
-                        </View>
-                        <View style={styles.metricCell}>
-                          <Text style={styles.metricLabel}>接收地址</Text>
-                          <Text style={styles.metricValue}>{maskAddress(transferCard.toAddress)}</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.swapProgressPanel}>
-                        <Text style={styles.swapProgressTitle}>结果入口</Text>
-                        <Text style={styles.swapProgressLabel}>{statusLabel}</Text>
-                        <Text style={styles.cardHelperTextOnDark}>
-                          结果会统一回到对应币种账号明细；若长期未达，再由人工客服协助处理。
-                        </Text>
-                      </View>
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryAction} onPress={() => router.push("/(tabs)/wallet")}>
-                          <Text style={styles.secondaryActionText}>去钱包看明细</Text>
-                        </Pressable>
-                        <Pressable style={styles.primaryAction} onPress={() => void handleTransferSignature(transferCard)}>
-                           <Text style={styles.primaryActionText}>交给 Agent Wallet 执行</Text>
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
-
-                {item.card?.kind === "meme" ? (() => {
-                  const memeCard = item.card.payload;
-                  return (
-                    <LinearGradient
-                      colors={["rgba(255,255,255,0.98)", "rgba(246,247,250,0.98)", "rgba(239,242,247,0.96)"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.glassCard}
-                    >
-                      <View style={styles.cardHeaderRow}>
-                        <View style={[styles.cardIconWrap, styles.assetIconWrap]}>
-                          <MaterialCommunityIcons name="fire-circle" size={20} color="#7C3AED" />
-                        </View>
-                        <View style={styles.cardHeaderTextWrap}>
-                          <Text style={[styles.cardEyebrow, styles.darkEyebrow]}>Meme 扫描</Text>
-                          <Text style={[styles.cardTitle, styles.darkTitle]}>最新热门 Meme</Text>
-                        </View>
-                      </View>
-
-                      {memeCard.tokens.slice(0, 3).map((token, index) => (
-                        <View key={`${token.tokenContractAddress}-${index}`} style={styles.memeRow}>
-                          <View style={styles.memeLeft}>
-                            <Text style={styles.memeName}>{token.tokenSymbol}</Text>
-                            <Text style={styles.memeMeta}>持币地址 {token.holders || "--"} · 聪明钱买入 {token.smartMoneyBuys || "0"}</Text>
-                          </View>
-                          <View style={styles.memeRight}>
-                            <Text style={styles.memeCap}>{formatUsdCompact(Number(token.marketCap || 0))}</Text>
-                            <Text style={styles.memeMeta}>1h 成交 {formatUsdCompact(Number(token.volume24h || 0))}</Text>
-                          </View>
-                        </View>
-                      ))}
-
-                      <View style={styles.cardActionRow}>
-                        <Pressable style={styles.secondaryActionLight} onPress={() => void sendMessage("继续扫描新的 Meme 币") }>
-                          <Text style={styles.secondaryActionLightText}>继续扫描</Text>
-                        </Pressable>
-                        <Pressable style={styles.primaryAction} onPress={() => void sendMessage("最近大户在买什么") }>
-                          <Text style={styles.primaryActionText}>查看聪明钱</Text>
-                        </Pressable>
-                      </View>
-                    </LinearGradient>
-                  );
-                })() : null}
+            <View style={[styles.msgRow, isUser && styles.msgRowUser]}>
+              {!isUser && (
+                <View style={styles.aiAvatar}>
+                  <MaterialCommunityIcons name="dolphin" size={14} color="#FFFFFF" />
+                </View>
+              )}
+              <View style={[styles.msgContent, isUser && styles.msgContentUser]}>
+                <Text style={[styles.msgText, isUser && styles.msgTextUser]}>{item.content}</Text>
+                {item.card && renderCard(item.card)}
               </View>
             </View>
           );
@@ -2078,648 +937,283 @@ export default function ChatScreen() {
         ListFooterComponent={<View style={{ height: 100 }} />}
       />
 
-      <View style={styles.floatingComposer}>
-        <View style={styles.composerRow}>
-          <View style={styles.inputWrap}>
-            <TextInput
-              value={input}
-              onChangeText={setInput}
-              placeholder="输入你的问题..."
-              placeholderTextColor="rgba(148,163,184,0.6)"
-              returnKeyType="send"
-              onSubmitEditing={() => void sendMessage()}
-              style={styles.input}
-            />
-          </View>
-
+      {/* Floating composer */}
+      <View style={styles.composer}>
+        <View style={styles.composerInner}>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="输入你的问题..."
+            placeholderTextColor="#9CA3AF"
+            returnKeyType="send"
+            onSubmitEditing={() => void sendMessage()}
+            style={styles.composerInput}
+          />
           <Pressable
             onPress={() => void sendMessage()}
             disabled={submitting}
-            style={({ pressed }) => [
-              styles.sendButtonWrap,
-              (pressed || submitting) && styles.sendButtonPressed,
-            ]}
+            style={({ pressed }) => [styles.sendBtn, (pressed || submitting) && { opacity: 0.6 }]}
           >
-            <LinearGradient
-              colors={["#7C3AED", "#6D28D9"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.sendButton}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <MaterialCommunityIcons name="arrow-up" size={22} color="#FFFFFF" />
-              )}
-            </LinearGradient>
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <MaterialCommunityIcons name="arrow-up" size={20} color="#FFFFFF" />
+            )}
           </Pressable>
         </View>
-
-        {errorText ? (
-          <Text style={styles.errorText}>{errorText}</Text>
-        ) : null}
+        {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
       </View>
     </ScreenContainer>
   );
 }
 
+/* ══════════════════════════════════════════════════
+ *  Styles — Pure white + purple, Grok-inspired
+ * ══════════════════════════════════════════════════ */
+
 const styles = StyleSheet.create({
-  fixedHeaderWrap: {
-    backgroundColor: "#F5F5F7",
-    paddingTop: 4,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(15,23,42,0.04)",
-  },
-  headerBrandText: {
+  /* Header */
+  headerBrand: {
     fontSize: 18,
-    lineHeight: 24,
     fontWeight: "800",
-    color: "#1A1A2E",
-    letterSpacing: -0.3,
-  },
-  contentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 100,
-    backgroundColor: "#F5F5F7",
-  },
-  welcomeBlock: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 60,
-    paddingBottom: 32,
-    gap: 12,
-  },
-  welcomeLogoWrap: {
-    marginBottom: 8,
-  },
-  welcomeLogo: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: "800",
-    color: "#1A1A2E",
+    color: ManusColors.text,
     letterSpacing: -0.5,
   },
-  welcomeSubtitle: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: "#667085",
-    textAlign: "center",
+
+  /* Chat content */
+  chatContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 100,
   },
-  suggestionsWrap: {
+
+  /* Welcome */
+  welcome: {
+    alignItems: "center",
+    paddingTop: 80,
+    paddingBottom: 40,
+    gap: 8,
+  },
+  welcomeIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: ManusColors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  welcomeTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: ManusColors.text,
+    letterSpacing: -0.5,
+  },
+  welcomeSub: {
+    fontSize: 14,
+    color: ManusColors.muted,
+  },
+  suggestGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
     gap: 8,
-    paddingTop: 12,
-    paddingHorizontal: 8,
+    marginTop: 24,
+    paddingHorizontal: 16,
   },
-  suggestionChip: {
-    borderRadius: 999,
+  suggestCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
+    borderRadius: 12,
+    backgroundColor: ManusColors.surfaceTint,
   },
-  suggestionChipPressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.97 }],
-  },
-  suggestionText: {
+  suggestText: {
     fontSize: 13,
-    lineHeight: 18,
     fontWeight: "600",
-    color: "#344054",
-  },
-  bubbleRow: {
-    marginBottom: 16,
-    flexDirection: "row",
-    paddingHorizontal: 4,
-  },
-  userRow: {
-    justifyContent: "flex-end",
-  },
-  assistantRow: {
-    justifyContent: "flex-start",
-  },
-  bubble: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 6,
-  },
-  userBubble: {
-    maxWidth: "82%",
-    backgroundColor: "#7C3AED",
-    borderBottomRightRadius: 6,
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  assistantBubble: {
-    maxWidth: "92%",
-    backgroundColor: "rgba(255, 255, 255, 0.94)",
-    borderBottomLeftRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  assistantSuccess: {
-    borderColor: "#BBF7D0",
-    backgroundColor: "#F0FDF4",
-  },
-  assistantDanger: {
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
-  },
-  assistantWarning: {
-    borderColor: "#E5E7EB",
-    backgroundColor: "#F8FAFC",
-  },
-  bubbleTitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: "#1A1A2E",
-  },
-  bubbleContent: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#31324A",
-  },
-  bubbleMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#667085",
-    marginTop: 2,
-  },
-  userText: {
-    color: "#FFFFFF",
-  },
-  userMetaText: {
-    color: "rgba(255,255,255,0.7)",
-  },
-  richCard: {
-    marginTop: ManusSpacing.lg,
-    borderRadius: ManusRadius.card,
-    padding: ManusSpacing.card,
-    gap: ManusSpacing.md,
-    borderWidth: 1,
-    borderColor: ManusColors.divider,
-    backgroundColor: ManusColors.surface,
-    ...ManusShadow,
-  },
-  glassCard: {
-    marginTop: 12,
-    borderRadius: 24,
-    padding: 16,
-    gap: 14,
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
-    backgroundColor: "rgba(255,255,255,0.94)",
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
-    elevation: 3,
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  cardIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: ManusRadius.control,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: ManusColors.surfaceTint,
-    borderWidth: 1,
-    borderColor: "rgba(110,91,255,0.12)",
-  },
-  assetIconWrap: {
-    backgroundColor: "rgba(124,58,237,0.10)",
-  },
-  cardHeaderTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
-  cardEyebrow: {
-    ...ManusTypography.caption,
-    color: ManusColors.primary,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  darkEyebrow: {
-    color: "#7C3AED",
-  },
-  cardTitle: {
-    ...ManusTypography.sectionTitle,
     color: ManusColors.text,
-    fontWeight: "700",
-  },
-  darkTitle: {
-    color: "#1A1A2E",
-  },
-  badgeWrap: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: ManusRadius.pill,
-    backgroundColor: ManusColors.surfaceTint,
-    borderWidth: 1,
-    borderColor: "rgba(110,91,255,0.12)",
-  },
-  badgeText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "800",
-  },
-  priceValue: {
-    ...ManusTypography.numericHero,
-    fontSize: 30,
-    lineHeight: 36,
-    color: ManusColors.text,
-  },
-  metricGrid: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  metricCell: {
-    flex: 1,
-    borderRadius: ManusRadius.control,
-    padding: ManusSpacing.md,
-    backgroundColor: ManusColors.surfaceTint,
-    borderWidth: 1,
-    borderColor: ManusColors.divider,
-    gap: 4,
-  },
-  metricLabel: {
-    ...ManusTypography.caption,
-    color: ManusColors.muted,
-  },
-  metricValue: {
-    ...ManusTypography.secondary,
-    fontSize: 14,
-    lineHeight: 20,
-    color: ManusColors.text,
-    fontWeight: "700",
-  },
-  cardActionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 2,
-  },
-  cardHelperText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#64748B",
-  },
-  cardHelperTextOnDark: {
-    ...ManusTypography.caption,
-    lineHeight: 18,
-    color: ManusColors.textSecondary,
-  },
-  swapProgressPanel: {
-    marginTop: 2,
-    borderRadius: ManusRadius.control,
-    backgroundColor: ManusColors.glass,
-    borderWidth: 1,
-    borderColor: ManusColors.divider,
-    padding: ManusSpacing.md,
-    gap: 6,
-  },
-  swapProgressTitle: {
-    ...ManusTypography.caption,
-    color: ManusColors.muted,
-    fontWeight: "700",
-  },
-  swapProgressRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  swapProgressDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-  },
-  swapProgressDotDone: {
-    backgroundColor: "#6E5BFF",
-  },
-  swapProgressDotPending: {
-    backgroundColor: "rgba(110,91,255,0.22)",
-  },
-  swapProgressLabel: {
-    flex: 1,
-    ...ManusTypography.secondary,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: ManusColors.text,
-  },
-  swapProgressStatus: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "700",
-  },
-  swapProgressStatusDone: {
-    color: "#6E5BFF",
-  },
-  swapProgressStatusPending: {
-    color: "#667085",
-  },
-  primaryAction: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: ManusRadius.button,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: ManusColors.primary,
-    paddingHorizontal: 14,
-    ...ManusEmphasisShadow,
-  },
-  primaryActionText: {
-    ...ManusTypography.button,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  secondaryAction: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: ManusRadius.button,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: ManusColors.surface,
-    borderWidth: 1,
-    borderColor: ManusColors.divider,
-    paddingHorizontal: 14,
-  },
-  secondaryActionText: {
-    ...ManusTypography.secondary,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: ManusColors.primary,
-  },
-  secondaryActionLight: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.88)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
-    paddingHorizontal: 14,
-  },
-  secondaryActionLightText: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "700",
-    color: "#334155",
   },
 
-  assetChainRow: {
+  /* Message rows */
+  msgRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "rgba(124,58,237,0.06)",
+    alignItems: "flex-start",
+    marginBottom: 16,
+    gap: 8,
   },
-  assetChainTitle: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "700",
-    color: "#1A1A2E",
+  msgRowUser: {
+    justifyContent: "flex-end",
   },
-  assetChainMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#666C85",
-  },
-  assetChainRight: {
-    alignItems: "flex-end",
-    gap: 2,
-  },
-  assetChainValue: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: "800",
-    color: "#1A1A2E",
-  },
-  defiRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "rgba(124,58,237,0.06)",
-  },
-  defiLeft: {
-    flex: 1,
-    gap: 2,
-  },
-  defiRight: {
-    alignItems: "flex-end",
-    gap: 2,
-  },
-  defiName: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "700",
-    color: "#1A1A2E",
-  },
-  defiMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#666C85",
-  },
-  defiApy: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "800",
-    color: "#16A34A",
-  },
-  smartMoneyRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "#FAF7FF",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.06)",
-  },
-  smartMoneyLeft: {
-    flex: 1,
-    gap: 2,
-  },
-  smartMoneyRight: {
-    alignItems: "flex-end",
-    gap: 2,
-  },
-  smartMoneyRank: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  smartMoneyMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#667085",
-  },
-  smartMoneyToken: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#C4B5FD",
-  },
-  smartMoneyPnl: {
-    fontSize: 16,
-    lineHeight: 20,
-    fontWeight: "800",
-    color: "#86EFAC",
-  },
-  primaryGhostAction: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: ManusRadius.button,
+  aiAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: ManusColors.primary,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: ManusColors.surfaceTint,
-    borderWidth: 1,
-    borderColor: ManusColors.divider,
+    marginTop: 2,
+  },
+  msgContent: {
+    maxWidth: "85%",
+    gap: 8,
+  },
+  msgContentUser: {
+    alignItems: "flex-end",
+  },
+  msgText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: ManusColors.text,
+  },
+  msgTextUser: {
+    backgroundColor: ManusColors.primary,
+    color: "#FFFFFF",
     paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomRightRadius: 4,
+    overflow: "hidden",
   },
-  primaryGhostActionText: {
-    ...ManusTypography.secondary,
+
+  /* Rich cards */
+  card: {
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.04)",
+  },
+  cardHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  cardDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  cardLabel: {
     fontSize: 13,
-    lineHeight: 18,
     fontWeight: "700",
-    color: ManusColors.primary,
+    color: ManusColors.text,
+    flex: 1,
   },
-  memeRow: {
+  cardBadge: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  cardHero: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: ManusColors.text,
+    letterSpacing: -0.8,
+  },
+  cardMetaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  cardMeta: {
+    fontSize: 12,
+    color: ManusColors.muted,
+  },
+  cardActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  cardBtn: {
+    flex: 1,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+  },
+  cardBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: ManusColors.textSecondary,
+  },
+  cardBtnPrimary: {
+    backgroundColor: ManusColors.primary,
+    borderWidth: 0,
+  },
+  cardBtnPrimaryText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+
+  /* List rows inside cards */
+  listRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 12,
-    borderRadius: 18,
-    padding: 12,
-    backgroundColor: "rgba(248,250,252,0.96)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.05)",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.04)",
   },
-  memeLeft: {
-    flex: 1,
-    gap: 2,
-  },
-  memeRight: {
-    alignItems: "flex-end",
-    gap: 2,
-  },
-  memeName: {
+  listTitle: {
     fontSize: 14,
-    lineHeight: 20,
-    fontWeight: "800",
-    color: "#1A1A2E",
+    fontWeight: "600",
+    color: ManusColors.text,
   },
-  memeMeta: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#666C85",
+  listSub: {
+    fontSize: 11,
+    color: ManusColors.muted,
+    marginTop: 1,
   },
-  memeCap: {
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: "800",
-    color: "#7C3AED",
+  listValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: ManusColors.text,
   },
-  floatingComposer: {
+
+  /* Composer */
+  composer: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 8,
     paddingBottom: 34,
-    backgroundColor: "rgba(245,245,247,0.95)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(15,23,42,0.05)",
-    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.95)",
   },
-  composerRow: {
+  composerInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 24,
+    paddingLeft: 16,
+    paddingRight: 4,
+    paddingVertical: 4,
   },
-  inputWrap: {
+  composerInput: {
     flex: 1,
-    minWidth: 0,
-    minHeight: 44,
-    maxHeight: 100,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.96)",
-    borderWidth: 1,
-    borderColor: "rgba(15,23,42,0.08)",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    justifyContent: "center",
-  },
-  input: {
     fontSize: 15,
     lineHeight: 20,
-    color: "#1A1A2E",
+    color: ManusColors.text,
+    paddingVertical: 8,
   },
-  sendButtonWrap: {
-    borderRadius: 22,
-    overflow: "hidden",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  sendButtonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.95 }],
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  sendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: ManusColors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   errorText: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: "#DC2626",
+    fontSize: 12,
+    color: ManusColors.danger,
+    marginTop: 4,
+    paddingHorizontal: 4,
   },
 });

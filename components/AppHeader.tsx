@@ -2,15 +2,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import React from "react";
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { Colors } from "@/constants/theme";
-import {
-  ManusColors,
-  ManusEmphasisShadow,
-  ManusRadius,
-  ManusShadow,
-  ManusSpacing,
-  ManusTypography,
-} from "@/constants/manus-ui";
+import { ManusColors } from "@/constants/manus-ui";
 
 type Props = {
   title?: string;
@@ -35,9 +27,10 @@ export function AppHeader({
     <View style={[styles.container, containerStyle]}>
       <Pressable
         onPress={onWalletPress}
-        style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+        hitSlop={8}
+        style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
       >
-        <MaterialIcons name={leftIcon} size={20} color={Colors.light.foreground} />
+        <MaterialIcons name={leftIcon} size={22} color={ManusColors.text} />
       </Pressable>
 
       <View style={styles.centerWrap}>
@@ -46,9 +39,10 @@ export function AppHeader({
 
       <Pressable
         onPress={onRightPress}
-        style={({ pressed }) => [styles.iconButton, styles.rightButton, pressed && styles.pressed]}
+        hitSlop={8}
+        style={({ pressed }) => [styles.iconHit, pressed && styles.pressed]}
       >
-        <MaterialIcons name={rightIcon} size={20} color={Colors.light.foreground} />
+        <MaterialIcons name={rightIcon} size={22} color={ManusColors.text} />
       </Pressable>
     </View>
   );
@@ -56,14 +50,11 @@ export function AppHeader({
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: 64,
+    height: 48,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: ManusSpacing.md,
-    paddingHorizontal: ManusSpacing.page,
-    paddingTop: ManusSpacing.sm,
-    paddingBottom: ManusSpacing.md,
+    paddingHorizontal: 16,
     backgroundColor: "transparent",
   },
   centerWrap: {
@@ -71,29 +62,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: ManusRadius.control,
+  iconHit: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Colors.light.glass,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    ...ManusShadow,
-  },
-  rightButton: {
-    ...ManusEmphasisShadow,
-    shadowOpacity: 0.08,
   },
   title: {
-    ...ManusTypography.sectionTitle,
-    color: ManusColors.text,
+    fontSize: 17,
+    lineHeight: 22,
     fontWeight: "700",
+    color: ManusColors.text,
     letterSpacing: -0.3,
   },
   pressed: {
-    opacity: 0.86,
-    transform: [{ scale: 0.98 }],
+    opacity: 0.5,
   },
 });
