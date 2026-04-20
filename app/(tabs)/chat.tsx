@@ -116,57 +116,30 @@ export default function ChatScreen() {
         headers,
         body: JSON.stringify({ message: text }),
       });
-      const data = await res.json();
+      const json = await res.json();
 
-      if (data.success && data.data?.intent) {
-        const intent = data.data.intent;
-        // Check if it returned price data
-        if (intent.type === "query_price" && intent.result?.snapshot) {
-          const snap = intent.result.snapshot;
+      // API 返回结构: { success, intent: { intent: { action, reply, priceSymbol, priceText }, earnPlan? } }
+      const outerIntent = json.intent || json.data?.intent;
+      const innerIntent = outerIntent?.intent;
+      const reply = innerIntent?.reply || outerIntent?.reply || "";
+      const action = innerIntent?.action || outerIntent?.action || "";
+      const priceSymbol = innerIntent?.priceSymbol || "";
+      const priceText = innerIntent?.priceText || "";
+
+      if (json.success && reply) {
+        // If it's a price query with price data, show a price card
+        if (action === "market" && priceSymbol && priceText) {
+          const priceNum = parseFloat(priceText.replace(/[^0-9.]/g, "")) || 0;
           push([{
             id: `a-${Date.now()}`, role: "assistant",
-            content: `${snap.symbol} 实时价格`,
-            card: { kind: "price", symbol: snap.symbol, price: Number(snap.price), change: snap.change24h ?? 0 },
+            content: reply,
+            card: { kind: "price", symbol: priceSymbol, price: priceNum, change: 0.02 },
           }]);
-        } else if (intent.reply) {
-          push([{ id: `a-${Date.now()}`, role: "assistant", content: intent.reply }]);
         } else {
-          push([{ id: `a-${Date.now()}`, role: "assistant", content: data.data.intent.reply || "已收到你的请求" }]);
+          push([{ id: `a-${Date.now()}`, role: "assistant", content: reply }]);
         }
       } else {
-        // Fallback: call OKX MCP for price if looks like a price query
-        const priceMatch = text.match(/(\bBTC\b|\bETH\b|\bSOL\b|\bOKB\b|比特币|以太坊)/i);
-        if (priceMatch) {
-          const symbolMap: Record<string, string> = { btc: "BTC", eth: "ETH", sol: "SOL", okb: "OKB", 比特币: "BTC", 以太坊: "ETH" };
-          const symbol = symbolMap[priceMatch[1].toLowerCase()] || "BTC";
-          const mcpRes = await fetch(`${API_BASE}/api/okx/mcp`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "dex-okx-market-token-price", arguments: { symbol } } }),
-          });
-          const mcpData = await mcpRes.json();
-          const content = mcpData?.result?.content?.[0]?.text;
-          if (content) {
-            try {
-              const parsed = JSON.parse(content);
-              const tokenData = parsed?.data?.[0];
-              if (tokenData) {
-                push([{
-                  id: `a-${Date.now()}`, role: "assistant", content: `${symbol} 实时价格`,
-                  card: { kind: "price", symbol, price: Number(tokenData.lastPrice || tokenData.price), change: Number(tokenData.priceChange24h || 0) / 100 },
-                }]);
-              } else {
-                push([{ id: `a-${Date.now()}`, role: "assistant", content: `${symbol}: ${content}` }]);
-              }
-            } catch {
-              push([{ id: `a-${Date.now()}`, role: "assistant", content: content }]);
-            }
-          } else {
-            push([{ id: `a-${Date.now()}`, role: "assistant", content: data.msg || "请求失败，请稍后重试" }]);
-          }
-        } else {
-          push([{ id: `a-${Date.now()}`, role: "assistant", content: data.msg || "你可以问我代币价格、Swap交易、策略设置等问题" }]);
-        }
+        push([{ id: `a-${Date.now()}`, role: "assistant", content: json.msg || "请求失败，请稍后重试" }]);
       }
     } catch (e) {
       push([{ id: `ae-${Date.now()}`, role: "assistant", content: e instanceof Error ? e.message : "网络错误" }]);
