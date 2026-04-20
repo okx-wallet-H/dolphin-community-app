@@ -74,8 +74,8 @@ function PriceCard({ snapshot }: { snapshot: MarketSnapshot }) {
   const price = Number(snapshot.price) || 0;
   const change24h = snapshot.change24h;
   const isPositive = (change24h ?? 0) >= 0;
-  const high = Number(snapshot.high24h) || price * 1.01;
-  const low = Number(snapshot.low24h) || price * 0.99;
+  const high = Number((snapshot as any).high24h) || price * 1.01;
+  const low = Number((snapshot as any).low24h) || price * 0.99;
   const volume = Number(snapshot.volume24h) || 0;
 
   return (
@@ -255,7 +255,7 @@ export default function ChatScreen() {
               {/* Dolphin illustration */}
               <View style={s.dolphinContainer}>
                 <Image
-                  source={require("@/assets/images/hwallet-official-logo.png")}
+                  source={require("@/assets/images/dolphin-mascot.jpg")}
                   style={s.dolphinImage}
                   resizeMode="contain"
                 />
