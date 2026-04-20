@@ -29,301 +29,217 @@ import { getMe, sendAgentWalletOtp, verifyAgentWalletOtp } from "@/lib/_core/api
 
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
 
-// Design system colors - matching the mockup exactly
-const COLORS = {
-  bgGradientStart: "#FFFFFF",
-  bgGradientMid: "#F8F5FF",
-  bgGradientEnd: "#F0EBFF",
-  cardBg: "rgba(255,255,255,0.95)",
-  cardBorder: "rgba(139,103,255,0.12)",
-  inputBorder: "rgba(139,103,255,0.35)",
-  inputBorderFocus: "rgba(139,103,255,0.6)",
-  primaryGradientStart: "#A78BFA",
-  primaryGradientEnd: "#7C3AED",
-  textPrimary: "#1F1F3D",
-  textSecondary: "#6B6B8D",
-  textPlaceholder: "#A0A0C0",
+/* ── Unified Theme ── */
+const T = {
+  // Background
+  bg1: "#FFFFFF",
+  bg2: "#F5F0FF",
+  bg3: "#EDE5FF",
+  // Card glass
+  glass: "rgba(255,255,255,0.92)",
+  glassBorder: "rgba(255,255,255,0.95)",
+  glassStroke: "rgba(139,103,255,0.10)",
+  // Purple gradient
+  purple1: "#B794F6",
+  purple2: "#8B5CF6",
+  purple3: "#7C3AED",
+  // Text
+  txt1: "#1A1A2E",
+  txt2: "#6B6B8D",
+  txt3: "#A0A0C0",
+  // Accent
   error: "#EF4444",
-  success: "#7C3AED",
+  ok: "#7C3AED",
   white: "#FFFFFF",
-  segmentBg: "#F3EEFF",
-  segmentActive: "#7C3AED",
 };
 
 type StatusTone = "default" | "success" | "error";
 
-const FEATURE_CARDS = [
-  {
-    key: "ai-wallet",
-    icon: "robot-outline" as const,
-    iconBg: "rgba(139,103,255,0.15)",
-    title: "AI 对话钱包",
-  },
-  {
-    key: "agent-task",
-    icon: "rocket-launch-outline" as const,
-    iconBg: "rgba(251,191,36,0.15)",
-    title: "Agent 自动任务",
-  },
-  {
-    key: "asset-overview",
-    icon: "database-outline" as const,
-    iconBg: "rgba(16,185,129,0.15)",
-    title: "链上资产总览",
-  },
+const FEATURES = [
+  { key: "ai", icon: "robot-outline" as const, color: "#8B5CF6", bg: "rgba(139,92,246,0.12)", title: "AI 对话钱包" },
+  { key: "agent", icon: "rocket-launch-outline" as const, color: "#F59E0B", bg: "rgba(245,158,11,0.12)", title: "Agent 自动任务" },
+  { key: "asset", icon: "chart-donut" as const, color: "#10B981", bg: "rgba(16,185,129,0.12)", title: "链上资产总览" },
 ] as const;
 
-function normalizeErrorMessage(message: string, fallback: string): string {
-  const normalized = message.trim();
-  const upper = normalized.toUpperCase();
-
-  const exactMap: Record<string, string> = {
+function normErr(msg: string, fb: string): string {
+  const u = msg.trim().toUpperCase();
+  const map: Record<string, string> = {
     INVALID_EMAIL: "邮箱格式不正确",
     SEND_CODE_FAILED: "验证码发送失败",
-    NETWORK_ERROR: "网络连接失败，请检查网络",
+    NETWORK_ERROR: "网络连接失败",
     INVALID_CODE: "验证码不正确",
     INVALID_OTP: "验证码不正确",
     INVALID_OR_EXPIRED_CODE: "验证码不正确或已过期",
-    CODE_EXPIRED: "验证码已过期，请重新获取",
-    UNAUTHORIZED: "登录已过期，请重新登录",
-    EMAIL_SERVICE_NOT_CONFIGURED: "邮件服务尚未配置完成",
-    VERIFY_FAILED: "验证码校验失败，请稍后重试",
+    CODE_EXPIRED: "验证码已过期",
+    UNAUTHORIZED: "登录已过期",
+    EMAIL_SERVICE_NOT_CONFIGURED: "邮件服务尚未配置",
+    VERIFY_FAILED: "验证码校验失败",
   };
-
-  if (exactMap[upper]) return exactMap[upper];
-  if (/network error|network request failed|failed to fetch/i.test(normalized)) return "网络连接失败，请检查网络";
-  if (/invalid email/i.test(normalized)) return "邮箱格式不正确";
-  if (/invalid code|invalid otp|verification code|expired/i.test(normalized)) return "验证码不正确或已过期";
-  return normalized || fallback;
+  if (map[u]) return map[u];
+  if (/network/i.test(msg)) return "网络连接失败";
+  if (/invalid.*code|otp|expired/i.test(msg)) return "验证码不正确或已过期";
+  return msg.trim() || fb;
 }
 
 export default function LoginRoute() {
   const scrollRef = useRef<ScrollView | null>(null);
-  const [activeTab, setActiveTab] = useState<"login" | "register">("login");
+  const [tab, setTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [statusTone, setStatusTone] = useState<StatusTone>("default");
-  const [statusText, setStatusText] = useState("");
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tone, setTone] = useState<StatusTone>("default");
+  const [status, setStatus] = useState("");
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [otpRequestId, setOtpRequestId] = useState("");
-  const [isRestoringSession, setIsRestoringSession] = useState(true);
+  const [reqId, setReqId] = useState("");
+  const [restoring, setRestoring] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-    const restoreSession = async () => {
+    let m = true;
+    (async () => {
       try {
-        const token = await getSessionToken();
-        if (!token) return;
-        const cachedUser = await getUserInfo();
-        if (cachedUser) { router.replace("/(tabs)/chat"); return; }
-        const currentUser = await getMe();
-        if (currentUser) {
-          await setUserInfo({ ...currentUser, lastSignedIn: new Date(currentUser.lastSignedIn) });
-          router.replace("/(tabs)/chat");
-          return;
-        }
-        await removeSessionToken();
-        await clearUserInfo();
-      } catch {
-        await removeSessionToken();
-        await clearUserInfo();
-      } finally {
-        if (mounted) setIsRestoringSession(false);
-      }
-    };
-    restoreSession();
-    return () => { mounted = false; };
+        const tk = await getSessionToken();
+        if (!tk) return;
+        const cu = await getUserInfo();
+        if (cu) { router.replace("/(tabs)/chat"); return; }
+        const me = await getMe();
+        if (me) { await setUserInfo({ ...me, lastSignedIn: new Date(me.lastSignedIn) }); router.replace("/(tabs)/chat"); return; }
+        await removeSessionToken(); await clearUserInfo();
+      } catch { await removeSessionToken(); await clearUserInfo(); }
+      finally { if (m) setRestoring(false); }
+    })();
+    return () => { m = false; };
   }, []);
 
-  const helperTextColor = useMemo(() => {
-    if (statusTone === "error") return COLORS.error;
-    if (statusTone === "success") return COLORS.success;
-    return COLORS.textSecondary;
-  }, [statusTone]);
+  const helperColor = useMemo(() => tone === "error" ? T.error : tone === "success" ? T.ok : T.txt2, [tone]);
 
   const handleSendOtp = async () => {
-    if (!email.trim()) {
-      setStatusTone("error");
-      setStatusText("请先输入邮箱地址");
-      return;
-    }
+    if (!email.trim()) { setTone("error"); setStatus("请先输入邮箱地址"); return; }
     try {
-      setIsSendingOtp(true);
-      setStatusTone("default");
-      setStatusText("验证码发送中...");
-      const result = await sendAgentWalletOtp(email.trim());
-      setOtpSent(true);
-      setOtpRequestId(result.requestId || "");
-      setStatusTone("success");
-      setStatusText("验证码已发送，请查收邮箱");
-    } catch (error) {
-      setStatusTone("error");
-      setStatusText(error instanceof Error ? normalizeErrorMessage(error.message, "验证码发送失败") : "验证码发送失败");
-    } finally {
-      setIsSendingOtp(false);
-    }
+      setSendingOtp(true); setTone("default"); setStatus("验证码发送中...");
+      const r = await sendAgentWalletOtp(email.trim());
+      setOtpSent(true); setReqId(r.requestId || "");
+      setTone("success"); setStatus("验证码已发送，请查收邮箱");
+    } catch (e) {
+      setTone("error"); setStatus(e instanceof Error ? normErr(e.message, "验证码发送失败") : "验证码发送失败");
+    } finally { setSendingOtp(false); }
   };
 
   const handleSubmit = async () => {
-    if (!email.trim()) { setStatusTone("error"); setStatusText("请输入邮箱地址"); return; }
-    if (!code.trim()) { setStatusTone("error"); setStatusText("请输入验证码"); return; }
+    if (!email.trim()) { setTone("error"); setStatus("请输入邮箱地址"); return; }
+    if (!code.trim()) { setTone("error"); setStatus("请输入验证码"); return; }
     try {
-      setIsSubmitting(true);
-      setStatusTone("default");
-      setStatusText("正在验证...");
-      const result = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ""), otpRequestId);
-      if (!result.app_session_id) throw new Error("UNAUTHORIZED");
-      if (result.mockMode) throw new Error("当前为演示模式，请检查 OKX Agent Wallet 配置");
-      if (!result.wallet.evmAddress || !result.wallet.solanaAddress) throw new Error("钱包地址不完整");
-
-      await setSessionToken(result.app_session_id);
-      await setUserInfo({ ...result.user, lastSignedIn: new Date(result.user.lastSignedIn) });
+      setSubmitting(true); setTone("default"); setStatus("正在验证...");
+      const r = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ""), reqId);
+      if (!r.app_session_id) throw new Error("UNAUTHORIZED");
+      if (r.mockMode) throw new Error("当前为演示模式，请检查配置");
+      if (!r.wallet.evmAddress || !r.wallet.solanaAddress) throw new Error("钱包地址不完整");
+      await setSessionToken(r.app_session_id);
+      await setUserInfo({ ...r.user, lastSignedIn: new Date(r.user.lastSignedIn) });
       await AsyncStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify({
-        email: result.wallet.email,
-        evmAddress: result.wallet.evmAddress,
-        solanaAddress: result.wallet.solanaAddress,
-        updatedAt: new Date().toISOString(),
-        mockMode: result.mockMode,
+        email: r.wallet.email, evmAddress: r.wallet.evmAddress,
+        solanaAddress: r.wallet.solanaAddress, updatedAt: new Date().toISOString(), mockMode: r.mockMode,
       }));
-      setStatusTone("success");
-      setStatusText("验证成功");
-      router.replace("/(tabs)/wallet");
-    } catch (error) {
-      setStatusTone("error");
-      setStatusText(error instanceof Error ? normalizeErrorMessage(error.message, "登录失败") : "登录失败");
-    } finally {
-      setIsSubmitting(false);
-    }
+      setTone("success"); setStatus("验证成功");
+      router.replace("/(tabs)/chat");
+    } catch (e) {
+      setTone("error"); setStatus(e instanceof Error ? normErr(e.message, "登录失败") : "登录失败");
+    } finally { setSubmitting(false); }
   };
 
-  if (isRestoringSession) {
+  if (restoring) {
     return (
-      <View style={styles.loadingContainer}>
-        <LinearGradient colors={[COLORS.bgGradientStart, COLORS.bgGradientMid, COLORS.bgGradientEnd]} style={StyleSheet.absoluteFill} />
-        <Image source={require("@/assets/images/hwallet-official-logo.png")} style={styles.loadingLogo} resizeMode="contain" />
-        <Text style={styles.loadingTitle}>H Wallet</Text>
-        <ActivityIndicator size="large" color={COLORS.primaryGradientEnd} style={{ marginTop: 24 }} />
-        <Text style={styles.loadingText}>正在恢复登录状态...</Text>
+      <View style={s.loadingRoot}>
+        <LinearGradient colors={[T.bg1, T.bg2, T.bg3]} style={StyleSheet.absoluteFill} />
+        <Image source={require("@/assets/images/hwallet-official-logo.png")} style={s.loadingLogo} resizeMode="contain" />
+        <Text style={s.loadingBrand}>H Wallet</Text>
+        <ActivityIndicator size="large" color={T.purple3} style={{ marginTop: 24 }} />
+        <Text style={s.loadingTip}>正在恢复登录状态...</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.root}>
-      <LinearGradient colors={[COLORS.bgGradientStart, COLORS.bgGradientMid, COLORS.bgGradientEnd]} style={StyleSheet.absoluteFill} />
-      
-      {/* Rainbow glow effects */}
-      <View style={styles.glowTopRight} />
-      <View style={styles.glowBottomLeft} />
+    <View style={s.root}>
+      <LinearGradient colors={[T.bg1, T.bg2, T.bg3]} style={StyleSheet.absoluteFill} />
+      {/* Decorative glow orbs */}
+      <View style={s.orb1} />
+      <View style={s.orb2} />
 
-      <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+      <SafeAreaView style={s.safe} edges={["top", "left", "right", "bottom"]}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <ScrollView
-            ref={scrollRef}
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Logo */}
-            <View style={styles.logoSection}>
-              <View style={styles.logoRow}>
-                <Image source={require("@/assets/images/hwallet-official-logo.png")} style={styles.logoImage} resizeMode="contain" />
-                <Text style={styles.logoTitle}>H Wallet</Text>
+          <ScrollView ref={scrollRef} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {/* ── Logo Section ── */}
+            <View style={s.logoArea}>
+              <View style={s.logoGlow}>
+                <Image source={require("@/assets/images/hwallet-official-logo.png")} style={s.logo} resizeMode="contain" />
               </View>
-              <Text style={styles.subtitle}>对话式 Web3 钱包</Text>
+              <Text style={s.brand}>H Wallet</Text>
+              <Text style={s.subtitle}>对话式 Web3 钱包</Text>
+              <Text style={s.slogan}>一句话就可以构建任意交易策略</Text>
             </View>
 
-            {/* Form Card */}
-            <View style={styles.formCard}>
-              {/* Tab Switcher */}
-              <View style={styles.tabContainer}>
-                <View style={styles.tabBg}>
-                  <Pressable style={styles.tabItem} onPress={() => setActiveTab("login")}>
-                    {activeTab === "login" ? (
-                      <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.tabActive}>
-                        <Text style={styles.tabActiveText}>登录</Text>
-                      </LinearGradient>
-                    ) : (
-                      <View style={styles.tabInactive}>
-                        <Text style={styles.tabInactiveText}>登录</Text>
-                      </View>
-                    )}
-                  </Pressable>
-                  <Pressable style={styles.tabItem} onPress={() => setActiveTab("register")}>
-                    {activeTab === "register" ? (
-                      <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.tabActive}>
-                        <Text style={styles.tabActiveText}>注册</Text>
-                      </LinearGradient>
-                    ) : (
-                      <View style={styles.tabInactive}>
-                        <Text style={styles.tabInactiveText}>注册</Text>
-                      </View>
-                    )}
+            {/* ── Form Card (glass morphism) ── */}
+            <View style={s.card}>
+              {/* White border highlight */}
+              <View style={s.cardInner}>
+                {/* Tab Switcher */}
+                <View style={s.tabWrap}>
+                  <View style={s.tabBg}>
+                    {(["login", "register"] as const).map((t) => (
+                      <Pressable key={t} style={s.tabItem} onPress={() => setTab(t)}>
+                        {tab === t ? (
+                          <LinearGradient colors={[T.purple1, T.purple3]} style={s.tabOn}>
+                            <Text style={s.tabOnTxt}>{t === "login" ? "登录" : "注册"}</Text>
+                          </LinearGradient>
+                        ) : (
+                          <View style={s.tabOff}>
+                            <Text style={s.tabOffTxt}>{t === "login" ? "登录" : "注册"}</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Email */}
+                <View style={s.field}>
+                  <TextInput style={s.input} value={email} onChangeText={setEmail}
+                    placeholder="请输入邮箱地址" placeholderTextColor={T.txt3}
+                    keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
+                </View>
+
+                {/* Verify code */}
+                <View style={s.codeRow}>
+                  <TextInput style={s.codeInput} value={code} onChangeText={(v) => setCode(v.replace(/\D/g, ""))}
+                    placeholder="请输入验证码" placeholderTextColor={T.txt3}
+                    keyboardType="number-pad" maxLength={6} />
+                  <Pressable onPress={handleSendOtp} disabled={sendingOtp} style={s.sendBtn}>
+                    <LinearGradient colors={[T.purple1, T.purple3]} style={s.sendGrad}>
+                      {sendingOtp ? <ActivityIndicator color={T.white} size="small" /> : <Text style={s.sendTxt}>发送验证码</Text>}
+                    </LinearGradient>
                   </Pressable>
                 </View>
-              </View>
 
-              {/* Email Input */}
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="请输入邮箱地址"
-                  placeholderTextColor={COLORS.textPlaceholder}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-
-              {/* Code Input with Send Button */}
-              <View style={styles.codeContainer}>
-                <TextInput
-                  style={styles.codeInput}
-                  value={code}
-                  onChangeText={(v) => setCode(v.replace(/\D/g, ""))}
-                  placeholder="请输入验证码"
-                  placeholderTextColor={COLORS.textPlaceholder}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-                <Pressable style={styles.sendCodeBtn} onPress={handleSendOtp} disabled={isSendingOtp}>
-                  <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.sendCodeGradient}>
-                    {isSendingOtp ? (
-                      <ActivityIndicator color={COLORS.white} size="small" />
-                    ) : (
-                      <Text style={styles.sendCodeText}>发送验证码</Text>
-                    )}
+                {/* Submit */}
+                <Pressable onPress={handleSubmit} disabled={submitting} style={s.submitWrap}>
+                  <LinearGradient colors={[T.purple1, T.purple3]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.submitGrad}>
+                    {submitting ? <ActivityIndicator color={T.white} size="small" /> : <Text style={s.submitTxt}>继续进入</Text>}
                   </LinearGradient>
                 </Pressable>
+
+                {status ? <Text style={[s.statusTxt, { color: helperColor }]}>{status}</Text> : null}
               </View>
-
-              {/* Submit Button */}
-              <Pressable style={styles.submitBtn} onPress={handleSubmit} disabled={isSubmitting}>
-                <LinearGradient colors={[COLORS.primaryGradientStart, COLORS.primaryGradientEnd]} style={styles.submitGradient}>
-                  {isSubmitting ? (
-                    <ActivityIndicator color={COLORS.white} size="small" />
-                  ) : (
-                    <Text style={styles.submitText}>继续进入</Text>
-                  )}
-                </LinearGradient>
-              </Pressable>
-
-              {/* Status Text */}
-              {statusText ? <Text style={[styles.statusText, { color: helperTextColor }]}>{statusText}</Text> : null}
             </View>
 
-            {/* Feature Cards */}
-            <View style={styles.featureRow}>
-              {FEATURE_CARDS.map((item) => (
-                <View key={item.key} style={styles.featureCard}>
-                  <View style={[styles.featureIconWrap, { backgroundColor: item.iconBg }]}>
-                    <MaterialCommunityIcons name={item.icon} size={24} color={COLORS.primaryGradientEnd} />
+            {/* ── Feature Cards ── */}
+            <View style={s.featRow}>
+              {FEATURES.map((f) => (
+                <View key={f.key} style={s.featCard}>
+                  <View style={[s.featIcon, { backgroundColor: f.bg }]}>
+                    <MaterialCommunityIcons name={f.icon} size={26} color={f.color} />
                   </View>
-                  <Text style={styles.featureTitle}>{item.title}</Text>
+                  <Text style={s.featLabel}>{f.title}</Text>
                 </View>
               ))}
             </View>
@@ -334,158 +250,87 @@ export default function LoginRoute() {
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1 },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 40 },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 40 },
 
-  // Glow effects
-  glowTopRight: {
-    position: "absolute",
-    top: -50,
-    right: -50,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(167,139,250,0.15)",
-  },
-  glowBottomLeft: {
-    position: "absolute",
-    bottom: -80,
-    left: -80,
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: "rgba(139,103,255,0.1)",
-  },
+  // Glow orbs
+  orb1: { position: "absolute", top: -60, right: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: "rgba(139,92,246,0.10)" },
+  orb2: { position: "absolute", bottom: -100, left: -80, width: 280, height: 280, borderRadius: 140, backgroundColor: "rgba(167,139,250,0.08)" },
 
   // Loading
-  loadingContainer: { flex: 1, alignItems: "center", justifyContent: "center" },
+  loadingRoot: { flex: 1, alignItems: "center", justifyContent: "center" },
   loadingLogo: { width: 80, height: 80 },
-  loadingTitle: { fontSize: 28, fontWeight: "800", color: COLORS.textPrimary, marginTop: 12 },
-  loadingText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 12 },
+  loadingBrand: { fontSize: 28, fontWeight: "800", color: T.txt1, marginTop: 12 },
+  loadingTip: { fontSize: 14, color: T.txt2, marginTop: 12 },
 
   // Logo
-  logoSection: { alignItems: "center", marginTop: 40, marginBottom: 32 },
-  logoRow: { flexDirection: "row", alignItems: "center" },
-  logoImage: { width: 52, height: 52, marginRight: 12 },
-  logoTitle: { fontSize: 32, fontWeight: "800", color: COLORS.textPrimary },
-  subtitle: { fontSize: 16, color: COLORS.textSecondary, marginTop: 8 },
-
-  // Form Card
-  formCard: {
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 28,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.08,
-    shadowRadius: 24,
-    elevation: 8,
+  logoArea: { alignItems: "center", marginTop: 32, marginBottom: 28 },
+  logoGlow: {
+    width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(139,92,246,0.08)",
+    shadowColor: "#8B5CF6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 16,
   },
+  logo: { width: 56, height: 56 },
+  brand: { fontSize: 34, fontWeight: "900", color: T.txt1, marginTop: 12, letterSpacing: 0.5 },
+  subtitle: { fontSize: 16, fontWeight: "500", color: T.txt2, marginTop: 4 },
+  slogan: { fontSize: 13, color: T.purple2, marginTop: 8, fontWeight: "600", letterSpacing: 0.3 },
+
+  // Card - glass morphism with white border
+  card: {
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.9)",
+    backgroundColor: T.glass,
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.08,
+    shadowRadius: 32,
+    elevation: 10,
+  },
+  cardInner: { padding: 24 },
 
   // Tabs
-  tabContainer: { alignItems: "center", marginBottom: 24 },
-  tabBg: {
-    flexDirection: "row",
-    backgroundColor: COLORS.segmentBg,
-    borderRadius: 28,
-    padding: 4,
-  },
+  tabWrap: { alignItems: "center", marginBottom: 24 },
+  tabBg: { flexDirection: "row", backgroundColor: "rgba(139,92,246,0.08)", borderRadius: 28, padding: 4 },
   tabItem: { flex: 1 },
-  tabActive: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 24,
-    alignItems: "center",
-  },
-  tabActiveText: { fontSize: 16, fontWeight: "700", color: COLORS.white },
-  tabInactive: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 24,
-    alignItems: "center",
-  },
-  tabInactiveText: { fontSize: 16, fontWeight: "500", color: COLORS.textSecondary },
+  tabOn: { paddingVertical: 14, borderRadius: 24, alignItems: "center" },
+  tabOnTxt: { fontSize: 16, fontWeight: "700", color: T.white },
+  tabOff: { paddingVertical: 14, borderRadius: 24, alignItems: "center" },
+  tabOffTxt: { fontSize: 16, fontWeight: "500", color: T.txt2 },
 
-  // Inputs
-  inputContainer: {
-    borderWidth: 1.5,
-    borderColor: COLORS.inputBorder,
-    borderRadius: 28,
-    marginBottom: 16,
-    backgroundColor: COLORS.white,
+  // Fields
+  field: {
+    borderWidth: 1.5, borderColor: "rgba(139,92,246,0.2)", borderRadius: 28,
+    marginBottom: 16, backgroundColor: T.white,
   },
-  input: {
-    height: 56,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    color: COLORS.textPrimary,
+  input: { height: 54, paddingHorizontal: 20, fontSize: 16, color: T.txt1 },
+  codeRow: {
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1.5, borderColor: "rgba(139,92,246,0.2)", borderRadius: 28,
+    marginBottom: 24, backgroundColor: T.white, paddingRight: 6,
   },
-  codeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: COLORS.inputBorder,
-    borderRadius: 28,
-    marginBottom: 16,
-    backgroundColor: COLORS.white,
-    paddingRight: 6,
-  },
-  codeInput: {
-    flex: 1,
-    height: 56,
-    paddingHorizontal: 20,
-    fontSize: 16,
-    color: COLORS.textPrimary,
-  },
-  sendCodeBtn: { borderRadius: 22, overflow: "hidden" },
-  sendCodeGradient: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 22,
-  },
-  sendCodeText: { fontSize: 14, fontWeight: "600", color: COLORS.white },
+  codeInput: { flex: 1, height: 54, paddingHorizontal: 20, fontSize: 16, color: T.txt1 },
+  sendBtn: { borderRadius: 22, overflow: "hidden" },
+  sendGrad: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 22 },
+  sendTxt: { fontSize: 13, fontWeight: "700", color: T.white },
 
   // Submit
-  submitBtn: { borderRadius: 28, overflow: "hidden", marginTop: 8 },
-  submitGradient: {
-    height: 56,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 28,
-  },
-  submitText: { fontSize: 18, fontWeight: "700", color: COLORS.white },
+  submitWrap: { borderRadius: 28, overflow: "hidden" },
+  submitGrad: { height: 54, alignItems: "center", justifyContent: "center", borderRadius: 28 },
+  submitTxt: { fontSize: 18, fontWeight: "800", color: T.white, letterSpacing: 0.5 },
 
-  // Status
-  statusText: { textAlign: "center", fontSize: 14, marginTop: 16 },
+  statusTxt: { textAlign: "center", fontSize: 14, marginTop: 16 },
 
   // Features
-  featureRow: { flexDirection: "row", gap: 12, marginTop: 28 },
-  featureCard: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.85)",
-    borderRadius: 20,
-    paddingVertical: 20,
-    paddingHorizontal: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.9)",
-    shadowColor: "#7C3AED",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
+  featRow: { flexDirection: "row", gap: 12, marginTop: 28 },
+  featCard: {
+    flex: 1, alignItems: "center", paddingVertical: 20, paddingHorizontal: 8,
+    backgroundColor: "rgba(255,255,255,0.88)", borderRadius: 22,
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.95)",
+    shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 16, elevation: 4,
   },
-  featureIconWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  featureTitle: { fontSize: 13, fontWeight: "600", color: COLORS.textPrimary, textAlign: "center" },
+  featIcon: { width: 52, height: 52, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  featLabel: { fontSize: 12, fontWeight: "700", color: T.txt1, textAlign: "center" },
 });

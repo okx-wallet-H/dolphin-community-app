@@ -32,20 +32,22 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const WALLET_STORAGE_KEY = "hwallet-agent-wallet";
 const WALLET_REFRESH_EVENT = "hwallet:refresh-wallet-assets";
 
-// Premium colors
+// Unified glass theme (matching login & chat)
 const C = {
-  bg: "#F8F6FF",
+  bg: "#F5F0FF",
   bgCard: "#FFFFFF",
   primary: "#7C3AED",
   primaryDark: "#6D28D9",
   primaryLight: "#A78BFA",
   text: "#1A1A2E",
-  textSec: "#6B7280",
-  textMuted: "#9CA3AF",
+  textSec: "#6B6B8D",
+  textMuted: "#9B8FC0",
   positive: "#10B981",
   negative: "#EF4444",
   white: "#FFFFFF",
-  border: "rgba(124,58,237,0.08)",
+  glass: "rgba(255,255,255,0.92)",
+  glassBorder: "rgba(255,255,255,0.95)",
+  border: "rgba(139,92,246,0.10)",
 };
 
 // Token data with icons
