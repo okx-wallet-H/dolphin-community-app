@@ -188,24 +188,42 @@ function stringifyBody(body: unknown) {
   return body === undefined ? "" : JSON.stringify(body);
 }
 
+/**
+ * OKX Onchain OS 签名算法 (严格按照官方文档)
+ * preHash = timestamp + method + requestPath + body
+ * sign = Base64(HMAC-SHA256(preHash, secretKey))
+ *
+ * GET 请求: requestPath 包含 query string, body 为空
+ * POST 请求: requestPath 不含 query string, body 为 JSON 字符串
+ * timestamp: ISO 8601 格式, 截掉毫秒后两位 => "2025-01-01T00:00:00.0Z"
+ */
+function createTimestamp(): string {
+  return new Date().toISOString().slice(0, -5) + "Z";
+}
+
 function sign(secretKey: string, timestamp: string, method: "GET" | "POST", requestPath: string, body = "") {
+  const preHash = timestamp + method + requestPath + body;
   return crypto
     .createHmac("sha256", secretKey)
-    .update(`${timestamp}${method}${requestPath}${body}`)
+    .update(preHash)
     .digest("base64");
+}
+
+function getProjectId(): string {
+  return (process.env.OKX_PROJECT_ID || process.env.OKX_ACCESS_PROJECT || "").trim();
 }
 
 function buildRestHeaders(method: "GET" | "POST", requestPath: string, body = "") {
   const apiKey = getCredential("OKX_API_KEY");
   const secretKey = getCredential("OKX_SECRET_KEY");
   const passphrase = getCredential("OKX_PASSPHRASE");
+  const projectId = getProjectId();
 
   if (!apiKey) throw new Error("缺少 OKX_API_KEY 环境变量，请在 Vercel 项目设置中配置");
   if (!secretKey) throw new Error("缺少 OKX_SECRET_KEY 环境变量");
   if (!passphrase) throw new Error("缺少 OKX_PASSPHRASE 环境变量");
 
-  const timestamp = new Date().toISOString();
-  const projectId = (process.env.OKX_PROJECT_ID || process.env.OKX_ACCESS_PROJECT || "").trim();
+  const timestamp = createTimestamp();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -221,10 +239,24 @@ function buildRestHeaders(method: "GET" | "POST", requestPath: string, body = ""
 }
 
 function buildUpstreamMcpHeaders() {
-  return {
+  const apiKey = getCredential("OKX_API_KEY");
+  const secretKey = getCredential("OKX_SECRET_KEY");
+  const passphrase = getCredential("OKX_PASSPHRASE");
+  const projectId = getProjectId();
+  const timestamp = createTimestamp();
+  // MCP endpoint uses POST
+  const mcpPath = "/api/v1/onchainos-mcp";
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "OK-ACCESS-KEY": getCredential("OKX_API_KEY"),
+    "OK-ACCESS-KEY": apiKey,
+    "OK-ACCESS-SIGN": sign(secretKey, timestamp, "POST", mcpPath, ""),
+    "OK-ACCESS-PASSPHRASE": passphrase,
+    "OK-ACCESS-TIMESTAMP": timestamp,
   };
+  if (projectId) {
+    headers["OK-ACCESS-PROJECT"] = projectId;
+  }
+  return headers;
 }
 
 function resolveChainIndex(input?: unknown): string {
@@ -509,29 +541,87 @@ async function handleTokenPriceInfo(args: Record<string, unknown>) {
   );
   const chainIndex = resolveChainIndex(args.chainIndex ?? args.chain);
 
-  if (!tokenContractAddress) {
-    throw new Error("token_price_info 缺少 tokenAddress 或 address 参数");
+  // 常见代币符号到交易对的映射
+  const symbolToInstId: Record<string, string> = {
+    btc: "BTC-USDT", bitcoin: "BTC-USDT",
+    eth: "ETH-USDT", ethereum: "ETH-USDT",
+    sol: "SOL-USDT", solana: "SOL-USDT",
+    okb: "OKB-USDT",
+    doge: "DOGE-USDT", dogecoin: "DOGE-USDT",
+    xrp: "XRP-USDT", ripple: "XRP-USDT",
+    bnb: "BNB-USDT",
+    ada: "ADA-USDT", cardano: "ADA-USDT",
+    avax: "AVAX-USDT",
+    dot: "DOT-USDT", polkadot: "DOT-USDT",
+    matic: "MATIC-USDT", polygon: "MATIC-USDT",
+    link: "LINK-USDT", chainlink: "LINK-USDT",
+    uni: "UNI-USDT", uniswap: "UNI-USDT",
+    atom: "ATOM-USDT", cosmos: "ATOM-USDT",
+    ltc: "LTC-USDT", litecoin: "LTC-USDT",
+    near: "NEAR-USDT",
+    apt: "APT-USDT", aptos: "APT-USDT",
+    arb: "ARB-USDT", arbitrum: "ARB-USDT",
+    op: "OP-USDT", optimism: "OP-USDT",
+    sui: "SUI-USDT",
+    sei: "SEI-USDT",
+    pepe: "PEPE-USDT",
+    shib: "SHIB-USDT",
+    ton: "TON-USDT",
+    trx: "TRX-USDT", tron: "TRX-USDT",
+  };
+
+  // 如果提供了符号名，先尝试用公开 Exchange API 获取价格（更可靠）
+  const symbol = firstNonEmptyString(args.symbol, args.token, args.instId)?.toLowerCase();
+  const instId = symbol ? symbolToInstId[symbol] || `${symbol.toUpperCase()}-USDT` : "";
+
+  if (instId) {
+    try {
+      const tickerUrl = `https://www.okx.com/api/v5/market/ticker?instId=${instId}`;
+      const resp = await fetchWithTimeout(tickerUrl, {});
+      const json = (await resp.json()) as { code: string; data: Array<Record<string, string>> };
+      if (json.code === "0" && json.data?.[0]) {
+        const d = json.data[0];
+        return {
+          chainIndex,
+          tokenContractAddress: tokenContractAddress || instId,
+          instId,
+          price: d.last || "0",
+          change24h: d.last && d.open24h ? (((Number(d.last) - Number(d.open24h)) / Number(d.open24h)) * 100).toFixed(2) + "%" : "",
+          high24h: d.high24h || "",
+          low24h: d.low24h || "",
+          volume24h: d.vol24h || "",
+          volumeCcy24h: d.volCcy24h || "",
+          lastUpdated: d.ts ? new Date(Number(d.ts)).toISOString() : "",
+        };
+      }
+    } catch {
+      // Fallback to DEX API
+    }
   }
 
-  const data = (await okxPost("/api/v6/dex/market/price-info", [
-    {
-      chainIndex,
-      tokenContractAddress,
-    },
-  ])) as unknown[];
+  // Fallback: 使用 DEX aggregator 获取链上代币价格
+  if (tokenContractAddress) {
+    try {
+      const data = await okxGet("/api/v6/dex/aggregator/all-tokens", { chainIndex });
+      const tokens = Array.isArray(data) ? data : [];
+      const found = tokens.find((t: Record<string, unknown>) =>
+        String(t.tokenContractAddress || "").toLowerCase() === tokenContractAddress.toLowerCase()
+      );
+      if (found) {
+        return {
+          chainIndex,
+          tokenContractAddress,
+          price: String((found as Record<string, unknown>).tokenUnitPrice || "0"),
+          symbol: String((found as Record<string, unknown>).tokenSymbol || ""),
+          name: String((found as Record<string, unknown>).tokenName || ""),
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
 
-  const first = Array.isArray(data) ? toObject(data[0]) : {};
-  return {
-    chainIndex,
-    tokenContractAddress,
-    price: firstNonEmptyString(first.price, first.tokenPrice) || "0",
-    change24h: firstNonEmptyString(first.priceChange24H, first.change24h),
-    volume24h: firstNonEmptyString(first.volume24H, first.volume24h),
-    marketCap: firstNonEmptyString(first.marketCap),
-    liquidity: firstNonEmptyString(first.liquidity),
-    lastUpdated: firstNonEmptyString(first.time, first.lastUpdated),
-    raw: first,
-  };
+  throw new Error("无法获取代币价格，请提供代币符号（如 BTC、ETH）或合约地址");
 }
 
 async function handleTokenHotTokens(args: Record<string, unknown>) {
