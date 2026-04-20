@@ -102,7 +102,6 @@ export default function LoginRoute() {
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
   const [statusTone, setStatusTone] = useState<StatusTone>("default");
   const [statusText, setStatusText] = useState("");
   const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -300,18 +299,6 @@ export default function LoginRoute() {
                     )}
                   </LinearGradient>
                 </Pressable>
-              </View>
-
-              {/* Password Input */}
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="请输入密码"
-                  placeholderTextColor={COLORS.textPlaceholder}
-                  secureTextEntry
-                />
               </View>
 
               {/* Submit Button */}
