@@ -71,3 +71,4 @@ public/
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
 .vercel
+package-lock.json
