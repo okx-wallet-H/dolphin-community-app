@@ -128,8 +128,15 @@ export function registerAgentWalletRoutes(app: Express) {
   };
 
   const handleVerify = async (req: Request, res: Response) => {
-    const email = getBodyString(req.body, "email");
-    const code = getBodyString(req.body, "code");
+    const email =
+      getBodyString(req.body, "email") ||
+      getBodyString(req.body, "walletEmail") ||
+      getBodyString(req.body, "account");
+    const code =
+      getBodyString(req.body, "code") ||
+      getBodyString(req.body, "otp") ||
+      getBodyString(req.body, "verificationCode");
+    const requestId = getBodyString(req.body, "requestId", 4000) || getBodyString(req.body, "flowId", 4000);
 
     if (!email || !code) {
       res.status(400).json({ error: "email and code are required" });
@@ -137,7 +144,7 @@ export function registerAgentWalletRoutes(app: Express) {
     }
 
     try {
-      const result = await verifyWalletOtp({ email, code });
+      const result = await verifyWalletOtp({ email, code, requestId });
       const user = await syncAgentWalletUser(result.sessionUser);
       const sessionToken = await sdk.createSessionToken(result.sessionUser.openId, {
         name: result.sessionUser.name,
