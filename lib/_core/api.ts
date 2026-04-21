@@ -552,7 +552,7 @@ export type WalletAssetItem = {
 export type AgentWalletAssetsResponse = {
   success: true;
   mockMode: boolean;
-  source: 'okx-mcp' | 'public-chain' | 'demo-fallback';
+  source: 'okx-mcp' | 'public-chain';
   totalAssetValue: string;
   walletAddresses: {
     chainIndex: string;
@@ -1018,81 +1018,6 @@ function buildWalletAssetItem(data: {
     tokenPrice: formatPrice(data.tokenPrice),
     valueUsd: formatFiat(valueUsd),
     isRiskToken: false,
-  };
-}
-
-function buildDemoAccountAssets(wallet: StoredWalletSnapshot): AgentWalletAssetsResponse {
-  const updatedAt = new Date().toISOString();
-  const evmAddress = wallet?.evmAddress || '0xDemoWalletAddress0000000000000000000000000000';
-  const solanaAddress = wallet?.solanaAddress || 'SoDemoWalletAddress111111111111111111111111111';
-
-  const walletAddresses = [
-    {
-      chainIndex: '1',
-      chainName: 'Ethereum',
-      address: evmAddress,
-      assets: [
-        buildWalletAssetItem({
-          chainIndex: '1',
-          chainName: 'Ethereum',
-          address: evmAddress,
-          tokenAddress: '-',
-          symbol: 'ETH',
-          tokenName: 'Ethereum',
-          balance: 0.8245,
-          tokenPrice: 1895.42,
-          logoUrl: 'https://www.okx.com/cdn/assets/imgs/221/Ethereum.png',
-          priceSource: 'okx-market',
-          priceUpdatedAt: updatedAt,
-        }),
-        buildWalletAssetItem({
-          chainIndex: '1',
-          chainName: 'Ethereum',
-          address: evmAddress,
-          tokenAddress: '0xdac17f958d2ee523a2206206994597c13d831ec7',
-          symbol: 'USDT',
-          tokenName: 'Tether USD',
-          balance: 1280,
-          tokenPrice: 1,
-          logoUrl: 'https://www.okx.com/cdn/assets/imgs/221/5B313E8F4E9A8A4C.png',
-          priceSource: 'okx-market',
-          priceUpdatedAt: updatedAt,
-        }),
-      ],
-    },
-    {
-      chainIndex: '101',
-      chainName: 'Solana',
-      address: solanaAddress,
-      assets: [
-        buildWalletAssetItem({
-          chainIndex: '101',
-          chainName: 'Solana',
-          address: solanaAddress,
-          tokenAddress: '-',
-          symbol: 'SOL',
-          tokenName: 'Solana',
-          balance: 18.42,
-          tokenPrice: 132.8,
-          logoUrl: 'https://www.okx.com/cdn/assets/imgs/221/61088B116630C60C.png',
-          priceSource: 'okx-market',
-          priceUpdatedAt: updatedAt,
-        }),
-      ],
-    },
-  ];
-
-  const totalAssetValue = walletAddresses
-    .flatMap((chain) => chain.assets)
-    .reduce((sum, asset) => sum + toNumber(asset.valueUsd), 0);
-
-  return {
-    success: true,
-    mockMode: true,
-    source: 'demo-fallback',
-    totalAssetValue: totalAssetValue.toString(),
-    walletAddresses,
-    updatedAt,
   };
 }
 
@@ -1895,7 +1820,7 @@ export async function getAccountAssets(wallet: StoredWalletSnapshot): Promise<Ag
   }
 
   if (wallet.mockMode) {
-    throw new Error('当前钱包仍是演示模式，无法查询真实链上资产');
+    throw new Error('当前钱包未完成真实链路初始化，无法查询链上资产');
   }
 
   // 直接通过 OKX onchainos-skills MCP 获取真实链上余额与持仓。

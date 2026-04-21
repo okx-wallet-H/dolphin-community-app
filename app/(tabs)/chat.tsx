@@ -16,7 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getSessionToken } from "@/lib/_core/auth";
 import { getApiBaseUrl } from "@/constants/oauth";
@@ -53,7 +53,7 @@ type WalletSnapshot = {
 };
 
 type ChatCard =
-  | { kind: "price"; symbol: string; price: number; change: number }
+  | { kind: "price"; symbol: string; price: number; change?: number | null }
   | { kind: "deposit"; address: string; networkLabel: string; chainKind: "evm" | "solana" };
 
 type ChatMessage = {
@@ -75,8 +75,9 @@ function maskAddress(address: string) {
 }
 
 /* ── Price Card Component ── */
-function PriceCard({ symbol, price, change }: { symbol: string; price: number; change: number }) {
-  const up = change >= 0;
+function PriceCard({ symbol, price, change }: { symbol: string; price: number; change?: number | null }) {
+  const hasChange = typeof change === "number" && Number.isFinite(change);
+  const up = hasChange ? change >= 0 : true;
   return (
     <View style={s.priceCard}>
       <LinearGradient colors={["rgba(255,255,255,0.96)", "rgba(248,245,255,0.92)"]} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
@@ -89,10 +90,16 @@ function PriceCard({ symbol, price, change }: { symbol: string; price: number; c
       </View>
       <Text style={s.pcPrice}>{formatPrice(price)}</Text>
       <View style={s.pcChangeRow}>
-        <MaterialCommunityIcons name={up ? "arrow-top-right" : "arrow-bottom-right"} size={16} color={up ? T.positive : T.negative} />
-        <Text style={[s.pcChangeText, { color: up ? T.positive : T.negative }]}>
-          {up ? "+" : ""}{(change * 100).toFixed(2)}% (24h)
-        </Text>
+        {hasChange ? (
+          <>
+            <MaterialCommunityIcons name={up ? "arrow-top-right" : "arrow-bottom-right"} size={16} color={up ? T.positive : T.negative} />
+            <Text style={[s.pcChangeText, { color: up ? T.positive : T.negative }]}>
+              {up ? "+" : ""}{(change * 100).toFixed(2)}% (24h)
+            </Text>
+          </>
+        ) : (
+          <Text style={s.pcChangeNeutral}>实时价格已更新</Text>
+        )}
       </View>
       <View style={s.pcActions}>
         <Pressable style={s.pcBtnOutline}><Text style={s.pcBtnOutlineTxt}>查看详情</Text></Pressable>
@@ -120,6 +127,7 @@ function DepositCard({ address, networkLabel, chainKind }: { address: string; ne
 /* ── Main Chat Screen ── */
 export default function ChatScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<"chat" | "community">("chat");
   const [msgs, setMsgs] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -193,7 +201,12 @@ export default function ChatScreen() {
         headers,
         body: JSON.stringify({ message: text, wallet }),
       });
-      const json = await res.json();
+      const rawText = await res.text();
+      const json = rawText ? JSON.parse(rawText) : {};
+
+      if (!res.ok) {
+        throw new Error(json?.msg || json?.message || `服务请求失败（${res.status}）`);
+      }
 
       // API 返回结构: { success, intent: { intent: { action, reply, priceSymbol, priceText }, earnPlan? } }
       const outerIntent = json.intent || json.data?.intent;
@@ -222,7 +235,7 @@ export default function ChatScreen() {
           push([{
             id: `a-${Date.now()}`, role: "assistant",
             content: reply,
-            card: { kind: "price", symbol: priceSymbol, price: priceNum, change: 0.02 },
+            card: { kind: "price", symbol: priceSymbol, price: priceNum, change: null },
           }]);
         } else {
           push([{ id: `a-${Date.now()}`, role: "assistant", content: reply }]);
@@ -231,7 +244,11 @@ export default function ChatScreen() {
         push([{ id: `a-${Date.now()}`, role: "assistant", content: json.msg || "请求失败，请稍后重试" }]);
       }
     } catch (e) {
-      push([{ id: `ae-${Date.now()}`, role: "assistant", content: e instanceof Error ? e.message : "网络错误" }]);
+      const message = e instanceof Error ? e.message : "网络错误";
+      const normalizedMessage = /network request failed/i.test(message)
+        ? "网络连接失败，请确认当前安装包可以访问线上服务后再重试。"
+        : message;
+      push([{ id: `ae-${Date.now()}`, role: "assistant", content: normalizedMessage }]);
     } finally { setBusy(false); }
   }, [input, busy, push]);
 
@@ -267,8 +284,8 @@ export default function ChatScreen() {
       <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+          behavior="padding"
+          keyboardVerticalOffset={Platform.OS === "ios" ? 12 : insets.top + 12}
         >
           {/* Header */}
           <View style={s.hdr}>
@@ -311,7 +328,12 @@ export default function ChatScreen() {
           </View>
 
           {/* Bottom: quick actions + input */}
-          <View style={s.bottom}>
+          <View
+            style={[
+              s.bottom,
+              { paddingBottom: Platform.OS === "android" ? Math.max(insets.bottom, 16) : Math.max(insets.bottom, 12) },
+            ]}
+          >
             <View style={s.qRow}>
               {QUICK_ACTIONS.map((a) => (
                 <Pressable key={a.key} style={s.qItem} onPress={() => onQuick(a.key)}>
@@ -380,6 +402,7 @@ const s = StyleSheet.create({
   pcPrice: { fontSize: 30, fontWeight: "800", color: T.txt1, marginTop: 14, letterSpacing: -0.5 },
   pcChangeRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   pcChangeText: { fontSize: 14, fontWeight: "600" },
+  pcChangeNeutral: { fontSize: 13, fontWeight: "600", color: T.txt2 },
   pcActions: { flexDirection: "row", gap: 12, marginTop: 18 },
   pcBtnOutline: { flex: 1, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(139,92,246,0.2)", backgroundColor: T.glass },
   pcBtnOutlineTxt: { fontSize: 14, fontWeight: "600", color: T.txt2 },
@@ -387,7 +410,7 @@ const s = StyleSheet.create({
   pcBtnGrad: { flex: 1, alignItems: "center", justifyContent: "center" },
   pcBtnFillTxt: { fontSize: 14, fontWeight: "700", color: T.white },
   // Bottom
-  bottom: { paddingTop: 12, paddingBottom: Platform.OS === "ios" ? 12 : 10, paddingHorizontal: 16, backgroundColor: "rgba(245,240,255,0.72)" },
+  bottom: { paddingTop: 12, paddingHorizontal: 16, backgroundColor: "rgba(245,240,255,0.9)" },
   qRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 16 },
   qItem: { alignItems: "center", flex: 1 },
   qIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: T.glass, borderWidth: 1.5, borderColor: T.glassBorder, alignItems: "center", justifyContent: "center", shadowColor: T.purple3, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },

@@ -162,7 +162,7 @@ export default function MarketScreen() {
       }
 
       if (!Object.keys(nextMap).length) {
-        setErrorText("行情暂时未同步成功，页面已保留可演示的资产结构，请下拉重试。");
+        setErrorText("行情暂时未同步成功，请下拉重试以获取最新真实价格。");
       }
     } finally {
       setLoading(false);
@@ -281,7 +281,7 @@ export default function MarketScreen() {
               <Text style={styles.heroSummary}>
                 {loading
                   ? "正在同步最新行情数据，请稍候。同步完成后会自动更新涨跌幅、更新时间和市场强弱。"
-                  : "页面优先展示实时公共行情；若外部接口短时波动，仍保留专业的结构与中文提示，保证融资演示不断链。"}
+                  : "页面优先展示实时公共行情；若外部接口短时波动，会保留中文状态提示并等待下一次真实数据刷新。"}
               </Text>
 
               <View style={styles.heroMetricColumn}>
@@ -405,9 +405,9 @@ export default function MarketScreen() {
         }}
         ListFooterComponent={
           <View style={styles.footerCard}>
-            <Text style={styles.footerTitle}>演示说明</Text>
+            <Text style={styles.footerTitle}>数据说明</Text>
             <Text style={styles.footerText}>
-              行情页用于承接 AI 对话里的“现在 BTC 价格多少”等查询结果。即使在网络波动时，页面也会保留中文状态说明，避免白屏、空白或不专业的英文占位。
+              行情页用于承接 AI 对话中的价格查询结果；当外部接口波动时，页面只展示真实返回的数据或明确的等待提示，不再补充任何演示行情。
             </Text>
           </View>
         }

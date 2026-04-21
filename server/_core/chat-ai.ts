@@ -257,29 +257,17 @@ async function buildEarnIntentResult(message: string, wallet?: WalletSnapshot | 
     console.error('[ChatAI] build earn intent failed', error);
     return {
       success: true,
-      mockMode: true,
+      mockMode: false,
       intent: {
         action: 'earn',
         confidence: 0.68,
-        reply: `已先按 ${amount} USDT 为你生成赚币方案，实时收益池数据暂时不可用，请稍后重试。`,
+        reply: `暂时无法获取 ${targetSymbol} 的实时赚币池数据，我已记录你的需求，请稍后重试。`,
         priceSymbol: '',
         priceText: '',
         assetSummary: '',
         swapMessage: '',
         source: 'fallback',
-        mockMode: true,
-      },
-      earnPlan: {
-        amount,
-        apr: 8.5,
-        riskLabel: '稳健型',
-        description: '实时收益池暂不可用，当前返回临时兜底方案。',
-        status: 'ready',
-        protocol: 'Fallback',
-        chain: 'Polygon',
-        symbol: 'USDT',
-        tvlUsd: 0,
-        source: 'defillama',
+        mockMode: false,
       },
     };
   }
@@ -327,7 +315,21 @@ async function buildProfitIntentResult(wallet?: WalletSnapshot | null): Promise<
     };
   }
 
-  return buildEarnIntentResult('用1000U赚钱', wallet);
+  return {
+    success: true,
+    mockMode: false,
+    intent: {
+      action: 'profit',
+      confidence: 0.82,
+      reply: '当前还没有可计算收益的已激活赚币仓位。你可以先让我为你匹配一套真实赚币方案，再回来查看收益。',
+      priceSymbol: '',
+      priceText: '',
+      assetSummary: '',
+      swapMessage: '',
+      source: 'fallback',
+      mockMode: false,
+    },
+  };
 }
 
 function buildDepositIntentResult(wallet?: WalletSnapshot | null): ChatAiResult {
@@ -359,36 +361,6 @@ function buildDepositIntentResult(wallet?: WalletSnapshot | null): ChatAiResult 
   };
 }
 
-function buildGeneralEarnFallback(amount: number): EarnPlanSuggestion {
-  return {
-    amount,
-    apr: 8.5,
-    riskLabel: '稳健型',
-    description: '实时收益池暂不可用，当前返回临时兜底方案。',
-    status: 'ready',
-    protocol: 'Fallback',
-    chain: 'Polygon',
-    symbol: 'USDT',
-    tvlUsd: 0,
-    source: 'defillama',
-  };
-}
-
-function buildGeneralProfitFallback(): ProfitSnapshot {
-  return {
-    periodLabel: '最近7天（估算）',
-    totalProfit: 16.3,
-    todayProfit: 2.33,
-    totalInvested: 1000,
-    points: [1.8, 2.0, 2.1, 2.3, 2.4, 2.7, 3.0],
-    protocol: 'Fallback',
-    chain: 'Polygon',
-    symbol: 'USDT',
-    apr: 8.5,
-    source: 'defillama',
-  };
-}
-
 function summarizeUserMessage(message: string, limit = 20) {
   const normalized = normalizeText(message).replace(/\s+/g, ' ');
   if (!normalized) return '当前请求';
@@ -399,7 +371,7 @@ function buildIntentReplyDraft(action: ChatIntentAction, message: string, wallet
   const summary = summarizeUserMessage(message);
 
   if (action === 'asset') {
-    return buildAssetSummary(wallet);
+    return '我会先查询你当前 Agent Wallet 的真实资产与持仓情况。';
   }
 
   if (action === 'swap') {
@@ -468,13 +440,18 @@ const OKX_BASE_URL = 'https://web3.okx.com';
 const OKX_CURRENT_PRICE_PATH = '/api/v5/wallet/token/real-time-price';
 const OKX_PUBLIC_TICKER_URL = 'https://www.okx.com/api/v5/market/ticker';
 
-const MOCK_PRICE_TABLE: Record<string, { price: string; change24h: string; trend: string }> = {
-  BTC: { price: '68,420', change24h: '+2.84%', trend: '今天表现偏强，24 小时继续上涨。' },
-  ETH: { price: '3,420', change24h: '+1.26%', trend: 'ETH 维持温和上行，波动相对平稳。' },
-  SOL: { price: '182', change24h: '+4.12%', trend: 'SOL 活跃度较高，短线弹性更明显。' },
-  USDT: { price: '1.00', change24h: '+0.01%', trend: '稳定币价格基本稳定。' },
-  OKB: { price: '52.80', change24h: '+1.18%', trend: 'OKB 近期波动相对温和，适合继续观察量价配合。' },
+type PortfolioBalanceItem = {
+  address?: string;
+  balance?: string;
+  chainIndex?: string;
+  symbol?: string;
+  tokenName?: string;
+  tokenContractAddress?: string;
+  tokenPrice?: string;
+  tokenLogoUrl?: string;
+  isRiskToken?: boolean;
 };
+
 
 const MARKET_SYMBOL_ALIAS: Record<string, string> = {
   BTC: 'BTC',
@@ -528,12 +505,6 @@ const MARKET_OKX_INST_ID_MAP: Record<string, string> = {
   SOL: 'SOL-USDT',
   OKB: 'OKB-USDT',
 };
-
-const MOCK_ASSET_TOKENS = [
-  { symbol: 'USDT', amount: '2,450.00', valueUsdt: '2,450.00' },
-  { symbol: 'ETH', amount: '0.82', valueUsdt: '2,804.40' },
-  { symbol: 'SOL', amount: '14.50', valueUsdt: '2,639.00' },
-];
 
 // 安全的环境变量读取函数，防止敏感信息泄露
 function getEnv(name: 'OPENAI_API_KEY' | 'OKX_ONCHAIN_API_KEY' | 'OKX_API_KEY' | 'OKX_ONCHAIN_SECRET_KEY' | 'OKX_SECRET_KEY' | 'OKX_ONCHAIN_PASSPHRASE' | 'OKX_PASSPHRASE') {
@@ -655,15 +626,77 @@ function formatMarketTime(timestamp: string) {
   return new Date(value).toLocaleString('zh-CN', { hour12: false });
 }
 
-function buildMockMarketReply(symbol: string): MarketReply {
-  const normalized = normalizeMarketSymbol(symbol);
-  const market = MOCK_PRICE_TABLE[normalized] ?? MOCK_PRICE_TABLE.BTC;
-  return {
-    priceSymbol: normalized,
-    priceText: `${market.price} USDT`,
-    reply: `${normalized} 当前价格约为 ${market.price} USDT，24 小时涨跌幅 ${market.change24h}。${market.trend}`,
-    mockMode: true,
-  };
+function formatUsd(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return '0';
+  return new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: value >= 100 ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function buildWalletLabel(wallet?: WalletSnapshot | null) {
+  if (!wallet?.evmAddress && !wallet?.solanaAddress) {
+    return '当前未检测到完整钱包地址。';
+  }
+
+  const labels = [] as string[];
+  if (wallet?.evmAddress) {
+    labels.push(`EVM ${wallet.evmAddress.slice(0, 6)}...${wallet.evmAddress.slice(-4)}`);
+  }
+  if (wallet?.solanaAddress) {
+    labels.push(`Solana ${wallet.solanaAddress.slice(0, 6)}...${wallet.solanaAddress.slice(-4)}`);
+  }
+  return `已关联钱包：${labels.join('；')}`;
+}
+
+async function buildAssetSummary(wallet?: WalletSnapshot | null) {
+  if (!wallet?.evmAddress && !wallet?.solanaAddress) {
+    return '暂未检测到 Agent Wallet 地址，请先完成登录后再查询资产。';
+  }
+
+  const requests = [
+    wallet?.evmAddress
+      ? callMcpTool<PortfolioBalanceItem[]>('portfolio_all_balances', {
+          address: wallet.evmAddress,
+          chains: '1,137,42161,8453,10',
+          filter: '0',
+        }).catch(() => [])
+      : Promise.resolve([] as PortfolioBalanceItem[]),
+    wallet?.solanaAddress
+      ? callMcpTool<PortfolioBalanceItem[]>('portfolio_all_balances', {
+          address: wallet.solanaAddress,
+          chains: '501',
+          filter: '0',
+        }).catch(() => [])
+      : Promise.resolve([] as PortfolioBalanceItem[]),
+  ];
+
+  const [evmAssets, solanaAssets] = await Promise.all(requests);
+  const merged = [...evmAssets, ...solanaAssets]
+    .map((item) => {
+      const balance = Number(item.balance ?? 0);
+      const price = Number(item.tokenPrice ?? 0);
+      const valueUsd = Number.isFinite(balance * price) ? balance * price : 0;
+      return {
+        symbol: normalizeText(item.symbol, normalizeText(item.tokenName, 'Unknown')),
+        balance,
+        valueUsd,
+      };
+    })
+    .filter((item) => item.symbol && (item.balance > 0 || item.valueUsd > 0))
+    .sort((left, right) => right.valueUsd - left.valueUsd);
+
+  const totalUsd = merged.reduce((sum, item) => sum + item.valueUsd, 0);
+  const topHoldings = merged
+    .slice(0, 3)
+    .map((item) => `${item.symbol} ${item.balance >= 1 ? item.balance.toFixed(2) : item.balance.toFixed(6)}`)
+    .join('，');
+
+  if (!merged.length) {
+    return `${buildWalletLabel(wallet)} 当前暂未查询到可展示的链上资产，可能是余额尚未同步或该地址还没有可识别代币。`;
+  }
+
+  return `当前钱包总资产约为 ${formatUsd(totalUsd)} USDT，主要持仓包括 ${topHoldings}。${buildWalletLabel(wallet)}`;
 }
 
 async function fetchOkxRealtimePrice(symbol: string) {
@@ -767,19 +800,31 @@ async function buildMarketReply(symbol: string): Promise<MarketReply> {
       };
     }
   } catch (error) {
-    console.error('[ChatAI] fetch realtime public ticker failed', error);
+    console.error('[ChatAI] fetch realtime price failed', error);
   }
 
-  return buildMockMarketReply(normalized);
-}
+  try {
+    const market = await fetchOkxPublicTickerPrice(normalized);
+    if (market && Number.isFinite(market.price)) {
+      const marketTime = formatMarketTime(market.time);
+      const timeSuffix = marketTime ? `，更新时间 ${marketTime}` : '';
+      return {
+        priceSymbol: market.symbol,
+        priceText: `${formatPrice(market.price)} USDT`,
+        reply: `${market.symbol} 当前价格约为 ${formatPrice(market.price)} USDT${timeSuffix}。`,
+        mockMode: false,
+      };
+    }
+  } catch (error) {
+    console.error('[ChatAI] fetch public ticker failed', error);
+  }
 
-function buildAssetSummary(wallet?: WalletSnapshot | null) {
-  const total = '7,893.40';
-  const topHoldings = MOCK_ASSET_TOKENS.map((token) => `${token.symbol} ${token.amount}`).join('，');
-  const walletText = wallet?.evmAddress || wallet?.solanaAddress
-    ? `已关联钱包：${wallet.evmAddress ? `EVM ${wallet.evmAddress.slice(0, 6)}...${wallet.evmAddress.slice(-4)}` : ''}${wallet.evmAddress && wallet.solanaAddress ? '；' : ''}${wallet.solanaAddress ? `Solana ${wallet.solanaAddress.slice(0, 6)}...${wallet.solanaAddress.slice(-4)}` : ''}`
-    : '当前未检测到完整钱包地址。';
-  return `你的总资产估值约为 ${total} USDT，当前主要持仓包括 ${topHoldings}。${walletText}`;
+  return {
+    priceSymbol: normalized,
+    priceText: '',
+    reply: `${normalized} 的实时价格暂时不可用，请稍后重试。`,
+    mockMode: false,
+  };
 }
 
 async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | null): Promise<ChatAiIntent> {
@@ -802,16 +847,17 @@ async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | nu
   }
 
   if (/(余额|资产|多少钱|持仓)/.test(normalized)) {
+    const assetSummary = await buildAssetSummary(wallet).catch(() => '暂时无法读取钱包资产，请稍后重试。');
     return {
       action: 'asset',
       confidence: 0.82,
-      reply: buildIntentReplyDraft('asset', normalized, wallet),
+      reply: assetSummary,
       priceSymbol: '',
       priceText: '',
-      assetSummary: buildAssetSummary(wallet),
+      assetSummary,
       swapMessage: '',
       source: 'fallback',
-      mockMode: true,
+      mockMode: false,
     };
   }
 
@@ -880,7 +926,7 @@ async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | nu
     assetSummary: '',
     swapMessage: '',
     source: 'fallback',
-    mockMode: true,
+    mockMode: false,
   };
 }
 
@@ -917,7 +963,9 @@ async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot
   const action = normalizeAction(parsed.action);
   const inferredPriceSymbol = findMarketSymbolFromMessage(message);
   const priceSymbol = normalizeMarketSymbol(normalizeText(parsed.priceSymbol), inferredPriceSymbol);
-  const assetSummary = normalizeText(parsed.assetSummary) || (action === 'asset' ? buildAssetSummary(wallet) : '');
+  const assetSummary = action === 'asset'
+    ? (normalizeText(parsed.assetSummary) || await buildAssetSummary(wallet).catch(() => '暂时无法读取钱包资产，请稍后重试。'))
+    : '';
   const swapMessage = normalizeText(parsed.swapMessage) || (action === 'swap' ? message.trim() : '');
   let reply = normalizeText(parsed.reply);
 
@@ -938,17 +986,17 @@ async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot
   }
 
   if (action === 'asset') {
-    reply = reply || assetSummary || buildAssetSummary(wallet);
+    reply = reply || assetSummary || '暂时无法读取钱包资产，请稍后重试。';
     return {
       action,
       confidence: clampConfidence(parsed.confidence, 0.85),
       reply,
       priceSymbol: '',
       priceText: '',
-      assetSummary: assetSummary || buildAssetSummary(wallet),
+      assetSummary,
       swapMessage: '',
       source: 'llm',
-      mockMode: true,
+      mockMode: false,
     };
   }
 
@@ -1017,7 +1065,7 @@ async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot
     assetSummary: '',
     swapMessage: '',
     source: 'llm',
-    mockMode: true,
+    mockMode: false,
   };
 }
 
@@ -1027,31 +1075,59 @@ export async function getChatAiIntent(message: string, wallet?: WalletSnapshot |
     throw new Error('message is required');
   }
 
-  if (isEarnIntent(normalized)) {
-    return buildEarnIntentResult(normalized, wallet);
-  }
-
-  if (isProfitIntent(normalized)) {
-    return buildProfitIntentResult(wallet);
-  }
-
-  if (isDepositIntent(normalized)) {
-    return buildDepositIntentResult(wallet);
-  }
-
   try {
     const intent = await callPrimaryLlmChatIntent(normalized, wallet);
+
+    if (intent.action === 'earn') {
+      const earnResult = await buildEarnIntentResult(normalized, wallet);
+      return buildChatResult(
+        {
+          ...earnResult.intent,
+          reply: earnResult.intent.reply || intent.reply,
+          confidence: Math.max(intent.confidence, earnResult.intent.confidence),
+          source: 'llm',
+        },
+        earnResult.earnPlan ? { earnPlan: earnResult.earnPlan } : undefined,
+      );
+    }
+
+    if (intent.action === 'profit') {
+      const profitResult = await buildProfitIntentResult(wallet);
+      return buildChatResult(
+        {
+          ...profitResult.intent,
+          reply: profitResult.intent.reply || intent.reply,
+          confidence: Math.max(intent.confidence, profitResult.intent.confidence),
+          source: 'llm',
+        },
+        profitResult.profit ? { profit: profitResult.profit } : undefined,
+      );
+    }
+
+    if (intent.action === 'deposit') {
+      const depositResult = buildDepositIntentResult(wallet);
+      return buildChatResult(
+        {
+          ...depositResult.intent,
+          reply: depositResult.intent.reply || intent.reply,
+          confidence: Math.max(intent.confidence, depositResult.intent.confidence),
+          source: 'llm',
+        },
+        { deposit: depositResult.deposit },
+      );
+    }
+
     return buildChatResult(intent);
   } catch (error) {
     console.warn('[Chat AI] fallback intent parser:', error);
     const intent = await buildFallbackIntent(normalized, wallet);
 
     if (intent.action === 'earn') {
-      return buildChatResult(intent, { earnPlan: buildGeneralEarnFallback(extractEarnAmount(normalized)) });
+      return buildEarnIntentResult(normalized, wallet);
     }
 
     if (intent.action === 'profit') {
-      return buildChatResult(intent, { profit: buildGeneralProfitFallback() });
+      return buildProfitIntentResult(wallet);
     }
 
     if (intent.action === 'deposit') {

@@ -138,7 +138,6 @@ function TaskCard({ token, tokenColor, title, desc, status, statusBg, statusFg, 
 function TokenRow({ a, last }: { a: WalletAssetItem; last: boolean }) {
   const price = toNum(a.tokenPrice);
   const val = toNum(a.valueUsd);
-  const chg = (Math.random() * 5 + 0.1).toFixed(2);
   const tk = TOKENS[a.symbol] || { letter: a.symbol[0], bg: "#F3F0FF", fg: T.accent };
   return (
     <View style={[s.tokenRow, !last && s.tokenBorder]}>
@@ -155,7 +154,7 @@ function TokenRow({ a, last }: { a: WalletAssetItem; last: boolean }) {
       </View>
       <View style={s.tokenPriceCol}>
         <Text style={s.tokenPrice}>${fmt(price)}</Text>
-        <Text style={[s.tokenChg, { color: T.positive }]}>+{chg}%</Text>
+        <Text style={s.tokenChg}>{a.chainName}</Text>
       </View>
       <View style={s.tokenValCol}>
         <Text style={s.tokenVal}>${fmt(val)}</Text>
@@ -173,20 +172,17 @@ export default function WalletScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  const totalUsd = useMemo(() => toNum(assets?.totalAssetValue) || 12450, [assets?.totalAssetValue]);
+  const totalUsd = useMemo(() => toNum(assets?.totalAssetValue), [assets?.totalAssetValue]);
   const chainCards = useMemo<ChainCard[]>(() => assets?.walletAddresses || [], [assets?.walletAddresses]);
   const allAssets = useMemo(() => {
     const items: WalletAssetItem[] = [];
     chainCards.forEach((c) => c.assets.forEach((a) => items.push(a)));
     return items;
   }, [chainCards]);
-  const mock = [
-    { symbol: "BTC", balance: "0.041", valueUsd: "3000", tokenPrice: "72500", logoUrl: "", tokenAddress: "", tokenName: "Bitcoin", chainIndex: "1", chainName: "Ethereum", address: "", isRiskToken: false },
-    { symbol: "ETH", balance: "1.2", valueUsd: "2330", tokenPrice: "208.38", logoUrl: "", tokenAddress: "", tokenName: "Ethereum", chainIndex: "1", chainName: "Ethereum", address: "", isRiskToken: false },
-    { symbol: "SOL", balance: "4.5", valueUsd: "70", tokenPrice: "15.05", logoUrl: "", tokenAddress: "", tokenName: "Solana", chainIndex: "501", chainName: "Solana", address: "", isRiskToken: false },
-    { symbol: "USDT", balance: "20", valueUsd: "20", tokenPrice: "1.00", logoUrl: "", tokenAddress: "", tokenName: "Tether", chainIndex: "1", chainName: "Ethereum", address: "", isRiskToken: false },
-  ] as WalletAssetItem[];
-  const display = allAssets.length ? allAssets : mock;
+  const display = useMemo(
+    () => allAssets.filter((item) => toNum(item.valueUsd) > 0 || toNum(item.balance) > 0),
+    [allAssets],
+  );
   const depositAddresses = useMemo(() => {
     const resolved = chainCards
       .filter((item) => item.address)
@@ -313,8 +309,8 @@ export default function WalletScreen() {
                 </View>
                 <Text style={s.assetAmount}>{fmt(totalUsd)}</Text>
                 <View style={s.changeRow}>
-                  <Text style={s.changeLabel}>{"24h 变化"}</Text>
-                  <Text style={s.changeVal}>+$501.23 (+4.2%)</Text>
+                  <Text style={s.changeLabel}>{loading ? "同步状态" : "资产状态"}</Text>
+                  <Text style={s.changeVal}>{loading ? "正在同步链上资产" : totalUsd > 0 ? "已同步真实链上资产" : "暂未查询到资产"}</Text>
                 </View>
               </View>
               <DonutChart size={96} />
@@ -360,27 +356,24 @@ export default function WalletScreen() {
 
           {/* ── Dashboard Stats Grid ──────────────── */}
           <View style={s.statsGrid}>
-            <StatMini icon="chart-timeline-variant" iconColor="#7C3AED" label="总收益" value="+$1,280" sub="+10.3%" />
-            <StatMini icon="clock-outline" iconColor="#3B82F6" label="活跃策略" value="3 个" sub="运行中" />
-            <StatMini icon="shield-check-outline" iconColor="#10B981" label="安全分" value="98" sub="优秀" />
-            <StatMini icon="swap-horizontal" iconColor="#F59E0B" label="今日交易" value="12 笔" sub="$840" />
+            <StatMini icon="wallet-outline" iconColor="#7C3AED" label="资产总额" value={`$${fmt(totalUsd)}`} sub={totalUsd > 0 ? "真实链上余额" : "等待同步"} />
+            <StatMini icon="database-outline" iconColor="#3B82F6" label="持仓代币" value={`${display.length} 个`} sub={display.length ? "已识别代币" : "暂无持仓"} />
+            <StatMini icon="lan" iconColor="#10B981" label="链地址" value={`${chainCards.length} 个`} sub={chainCards.length ? "已载入地址" : "等待恢复"} />
+            <StatMini icon="download-outline" iconColor="#F59E0B" label="可充值网络" value={`${depositAddresses.length} 个`} sub={depositAddresses.length ? "已显示地址" : "暂无地址"} />
           </View>
-
-          {/* ── Agent Tasks ─────────────────────────── */}
-          <Text style={s.secTitle}>Agent 自动任务</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tasksScroll}>
-            <TaskCard token="ETH" tokenColor="#7C3AED" title="跌破 2200" desc="自动提醒" status="运行中" statusBg="#DCFCE7" statusFg="#16A34A" icon="bell-ring-outline" />
-            <TaskCard token="USDT" tokenColor="#10B981" title="闲置资金" desc="自动理财" status="待执行" statusBg="#FEF3C7" statusFg="#D97706" icon="currency-usd" />
-            <TaskCard token="USDT" tokenColor="#3B82F6" title="每周资产巡检" desc="报告" status="已完成" statusBg="#E0E7FF" statusFg="#4F46E5" icon="file-document-outline" />
-          </ScrollView>
 
           {/* ── Token List ──────────────────────────── */}
           <Text style={s.secTitle}>代币列表</Text>
           <View style={s.tokenCard}>
             {loading ? (
               <View style={{ paddingVertical: 50, alignItems: "center" }}><ActivityIndicator color={T.primary} size="large" /></View>
-            ) : (
+            ) : display.length ? (
               display.map((a, i) => <TokenRow key={`${a.symbol}-${i}`} a={a} last={i === display.length - 1} />)
+            ) : (
+              <View style={s.emptyState}>
+                <Text style={s.emptyStateTitle}>暂未查询到链上资产</Text>
+                <Text style={s.emptyStateText}>如果你刚转入 3U，请下拉刷新或稍后重试；页面现在只显示真实同步到的链上余额。</Text>
+              </View>
             )}
           </View>
 
@@ -459,6 +452,9 @@ const s = StyleSheet.create({
 
   /* Token List */
   tokenCard: { backgroundColor: T.cardSolid, borderRadius: 22, borderWidth: 1, borderColor: T.glassBorder, overflow: "hidden", shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 14 },
+  emptyState: { paddingHorizontal: 20, paddingVertical: 28, alignItems: "center" },
+  emptyStateTitle: { fontSize: 16, fontWeight: "800", color: T.text },
+  emptyStateText: { marginTop: 8, fontSize: 13, lineHeight: 20, color: T.textSec, textAlign: "center" },
   tokenRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 16 },
   tokenBorder: { borderBottomWidth: 1, borderBottomColor: T.borderLight },
   tokenCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },

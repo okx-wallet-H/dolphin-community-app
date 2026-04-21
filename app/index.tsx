@@ -101,7 +101,7 @@ function buildCapabilityHint(capabilities: PublicCapabilityStatusResponse | null
   }
 
   if (capabilities.onchainOs.providerMode !== 'okx') {
-    return '当前已启用真实 Agent Wallet 登录，但链上兑换与执行仍处于演示模式；要达到完整功能，还需补齐 OKX DEX / Onchain 凭证。';
+    return '当前已启用真实 Agent Wallet 登录，但链上兑换与执行尚未启用；要达到完整功能，还需补齐 OKX DEX / Onchain 凭证。';
   }
 
   return '当前部署已启用真实 Agent Wallet 登录与链上执行能力。';
@@ -146,7 +146,7 @@ function buildCapabilityRows(capabilities: PublicCapabilityStatusResponse | null
     },
     {
       label: '链上执行能力',
-      value: capabilities.onchainOs.providerMode === 'okx' ? '真实模式已启用' : '当前为演示模式',
+      value: capabilities.onchainOs.providerMode === 'okx' ? '真实模式已启用' : '尚未启用',
       tone: capabilities.onchainOs.providerMode === 'okx' ? ('ready' as CapabilityTone) : ('warning' as CapabilityTone),
     },
   ];
@@ -311,7 +311,7 @@ export default function LoginRoute() {
       setStatus('正在验证...');
       const result = await verifyAgentWalletOtp(email.trim(), code.trim().replace(/\s+/g, ''), reqId);
       if (!result.app_session_id) throw new Error('UNAUTHORIZED');
-      if (result.mockMode) throw new Error('当前为演示模式，请检查配置');
+      if (result.mockMode) throw new Error('当前链路未返回真实钱包结果，请检查配置');
       if (!result.wallet.evmAddress || !result.wallet.solanaAddress) throw new Error('钱包地址不完整');
 
       await setSessionToken(result.app_session_id);

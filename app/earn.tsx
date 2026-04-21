@@ -60,27 +60,6 @@ function formatUsdt(value: number, fractionDigits = 2) {
   })} USDT`;
 }
 
-function fallbackPlan(amount: number): EarnPlanViewModel {
-  const apr = 12.8;
-  return {
-    amount,
-    apr,
-    riskLabel: '稳健型',
-    description: '以稳定币收益池为核心，叠加低波动再平衡与止盈提醒，适合希望兼顾流动性与年化收益的用户。',
-    providerLabel: 'AI Earn Engine',
-    protocolLabel: 'Morpho / Aave / OKX Onchain 监控',
-    statusLabel: '可执行',
-    monthlyProfit: (amount * apr) / 12 / 100,
-    yearlyProfit: (amount * apr) / 100,
-    allocation: [
-      { label: '稳定币收益池', percent: 55, tone: '#7C3AED' },
-      { label: '链上套利监控仓', percent: 25, tone: '#8B5CF6' },
-      { label: '机动现金仓', percent: 20, tone: '#C4B5FD' },
-    ],
-    steps: ['把资金分成稳健收益仓、机动仓和观察仓。', '优先选择高流动性协议，保留可撤回资金。', '每日根据 OKX 行情与收益率变化自动提醒调仓。'],
-  };
-}
-
 function normalizeEarnPlan(payload: { amount: number; apr: number; riskLabel: string; description: string; status: string }): EarnPlanViewModel {
   const providerLabel = payload.description.includes('DeFiLlama') ? 'DeFiLlama AI 策略' : 'AI Earn Engine';
   const protocolLabel = payload.description.includes('Morpho')
@@ -113,7 +92,7 @@ function normalizeEarnPlan(payload: { amount: number; apr: number; riskLabel: st
 export default function EarnScreen() {
   const [wallet, setWallet] = useState<StoredWalletSnapshot | null>(null);
   const [selectedAmount, setSelectedAmount] = useState<number>(1000);
-  const [plan, setPlan] = useState<EarnPlanViewModel>(fallbackPlan(1000));
+  const [plan, setPlan] = useState<EarnPlanViewModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorText, setErrorText] = useState('');
@@ -149,19 +128,19 @@ export default function EarnScreen() {
           setPlan(normalizeEarnPlan(response.earnPlan));
           setStatusText('已基于当前输入重新生成策略，可继续同步到 Agent 任务页。');
         } else {
-          setPlan(fallbackPlan(amount));
-          setErrorText('当前返回的是通用建议，已先展示默认策略模板。');
-          setStatusText('当前为本地兜底方案，建议稍后重新刷新以获取在线策略。');
+          setPlan(null);
+          setErrorText('暂时未获取到在线赚币方案，请稍后刷新重试。');
+          setStatusText('当前没有可展示的在线策略，因此不会展示任何本地默认模板。');
         }
         setGeneratedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
         setPlanLinkedToAgent(false);
       } catch (error) {
         console.error('load earn plan failed', error);
-        setPlan(fallbackPlan(amount));
-        setErrorText('暂时无法拉取在线策略，已展示本地兜底方案。');
+        setPlan(null);
+        setErrorText('暂时无法拉取在线策略，请稍后重试。');
         setGeneratedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
         setPlanLinkedToAgent(false);
-        setStatusText('当前展示的是兜底策略，后续仍可同步到 Agent 页面作为手动策略草案。');
+        setStatusText('当前没有可展示的在线策略，因此不会展示任何兜底收益模板。');
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -178,9 +157,14 @@ export default function EarnScreen() {
     loadPlan(selectedAmount);
   }, [loadPlan, selectedAmount]);
 
-  const annualizedLabel = useMemo(() => `${plan.apr.toFixed(2)}%`, [plan.apr]);
+  const annualizedLabel = useMemo(() => (plan ? `${plan.apr.toFixed(2)}%` : '等待生成'), [plan]);
 
   const handleLinkToAgent = async () => {
+    if (!plan) {
+      setErrorText('当前没有可同步的在线策略，请先重新生成。');
+      return;
+    }
+
     const nextGeneratedAt = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     const payload: SyncedAgentPlan = {
       amount: plan.amount,
@@ -227,10 +211,10 @@ export default function EarnScreen() {
               <Text style={styles.heroTitle}>把钱包闲置资金变成可控收益</Text>
             </View>
             <View style={styles.heroChip}>
-              <Text style={styles.heroChipText}>{plan.statusLabel}</Text>
+              <Text style={styles.heroChipText}>{plan?.statusLabel ?? '等待生成'}</Text>
             </View>
           </View>
-          <Text style={styles.heroDescription}>{plan.description}</Text>
+          <Text style={styles.heroDescription}>{plan?.description ?? '当前仅展示实时生成的在线赚币策略；若收益池接口暂时不可用，这里不会再展示任何默认模板。'}</Text>
           <View style={styles.heroMetricRow}>
             <View style={styles.heroMetricBox}>
               <Text style={styles.heroMetricLabel}>预估年化</Text>
@@ -238,7 +222,7 @@ export default function EarnScreen() {
             </View>
             <View style={styles.heroMetricBox}>
               <Text style={styles.heroMetricLabel}>策略来源</Text>
-              <Text style={styles.heroMetricValueSmall}>{plan.providerLabel}</Text>
+              <Text style={styles.heroMetricValueSmall}>{plan?.providerLabel ?? '在线策略'}</Text>
             </View>
           </View>
           <Text style={styles.heroFootnote}>{wallet?.email ? `当前登录邮箱：${wallet.email}` : '登录后可结合真实钱包状态生成更贴身的赚币方案。'}</Text>
@@ -280,7 +264,7 @@ export default function EarnScreen() {
                 </View>
                 <View style={[styles.statusBadge, planLinkedToAgent ? styles.statusBadgeSuccess : styles.statusBadgeIdle]}>
                   <Text style={[styles.statusBadgeText, planLinkedToAgent ? styles.statusBadgeTextSuccess : styles.statusBadgeTextIdle]}>
-                    {planLinkedToAgent ? '已同步 Agent' : '待同步'}
+                    {planLinkedToAgent ? '已同步 Agent' : plan ? '待同步' : '等待生成'}
                   </Text>
                 </View>
               </View>
@@ -289,72 +273,81 @@ export default function EarnScreen() {
                 <Pressable style={styles.statusGhostButton} onPress={() => router.push('/(tabs)/chat')}>
                   <Text style={styles.statusGhostButtonText}>回到对话细聊</Text>
                 </Pressable>
-                <Pressable style={styles.statusPrimaryButton} onPress={handleLinkToAgent}>
+                <Pressable style={[styles.statusPrimaryButton, !plan && styles.buttonDisabled]} onPress={handleLinkToAgent} disabled={!plan}>
                   <Text style={styles.statusPrimaryButtonText}>{planLinkedToAgent ? '已加入任务清单' : '同步到 Agent'}</Text>
                 </Pressable>
               </View>
             </View>
 
-            <View style={styles.metricsRow}>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>预计月收益</Text>
-                <Text style={styles.metricValueSuccess}>+{formatUsdt(plan.monthlyProfit)}</Text>
-              </View>
-              <View style={styles.metricCard}>
-                <Text style={styles.metricLabel}>预计年收益</Text>
-                <Text style={styles.metricValue}>+{formatUsdt(plan.yearlyProfit)}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoCard}>
-              <View style={styles.infoHeader}>
-                <Text style={styles.infoTitle}>策略标签</Text>
-                <View style={styles.infoTag}>
-                  <Text style={styles.infoTagText}>{plan.riskLabel}</Text>
+            {plan ? (
+              <>
+                <View style={styles.metricsRow}>
+                  <View style={styles.metricCard}>
+                    <Text style={styles.metricLabel}>预计月收益</Text>
+                    <Text style={styles.metricValueSuccess}>+{formatUsdt(plan.monthlyProfit)}</Text>
+                  </View>
+                  <View style={styles.metricCard}>
+                    <Text style={styles.metricLabel}>预计年收益</Text>
+                    <Text style={styles.metricValue}>+{formatUsdt(plan.yearlyProfit)}</Text>
+                  </View>
                 </View>
-              </View>
-              <Text style={styles.infoBody}>{plan.protocolLabel}</Text>
-              <Text style={styles.infoCaption}>结合 OKX 行情观察、链上收益池与流动性管理建议生成。</Text>
-            </View>
 
-            <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>资金分配建议</Text>
-              <View style={styles.allocationWrap}>
-                {plan.allocation.map((item) => (
-                  <View key={item.label} style={styles.allocationItem}>
-                    <View style={styles.allocationLabelRow}>
-                      <View style={[styles.allocationDot, { backgroundColor: item.tone }]} />
-                      <Text style={styles.allocationLabel}>{item.label}</Text>
-                      <Text style={styles.allocationPercent}>{item.percent}%</Text>
-                    </View>
-                    <View style={styles.allocationTrack}>
-                      <View style={[styles.allocationProgress, { width: `${item.percent}%`, backgroundColor: item.tone }]} />
+                <View style={styles.infoCard}>
+                  <View style={styles.infoHeader}>
+                    <Text style={styles.infoTitle}>策略标签</Text>
+                    <View style={styles.infoTag}>
+                      <Text style={styles.infoTagText}>{plan.riskLabel}</Text>
                     </View>
                   </View>
-                ))}
-              </View>
-            </View>
+                  <Text style={styles.infoBody}>{plan.protocolLabel}</Text>
+                  <Text style={styles.infoCaption}>结合 OKX 行情观察、链上收益池与流动性管理建议生成。</Text>
+                </View>
 
-            <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>AI 执行步骤</Text>
-              <View style={styles.stepList}>
-                {plan.steps.map((step, index) => (
-                  <View key={step} style={styles.stepRow}>
-                    <View style={styles.stepIndex}>
-                      <Text style={styles.stepIndexText}>{index + 1}</Text>
-                    </View>
-                    <Text style={styles.stepText}>{step}</Text>
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoTitle}>资金分配建议</Text>
+                  <View style={styles.allocationWrap}>
+                    {plan.allocation.map((item) => (
+                      <View key={item.label} style={styles.allocationItem}>
+                        <View style={styles.allocationLabelRow}>
+                          <View style={[styles.allocationDot, { backgroundColor: item.tone }]} />
+                          <Text style={styles.allocationLabel}>{item.label}</Text>
+                          <Text style={styles.allocationPercent}>{item.percent}%</Text>
+                        </View>
+                        <View style={styles.allocationTrack}>
+                          <View style={[styles.allocationProgress, { width: `${item.percent}%`, backgroundColor: item.tone }]} />
+                        </View>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            </View>
+                </View>
 
-            <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>为什么这套方案适合现在</Text>
-              <Text style={styles.infoBody}>
-                当前页面优先展示稳健型方案：先把资金放在高流动性收益池里，再留出一部分机动资金用于补仓、换仓或响应新的高收益窗口。这样既保留灵活性，也能让收益更稳定。
-              </Text>
-            </View>
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoTitle}>AI 执行步骤</Text>
+                  <View style={styles.stepList}>
+                    {plan.steps.map((step, index) => (
+                      <View key={step} style={styles.stepRow}>
+                        <View style={styles.stepIndex}>
+                          <Text style={styles.stepIndexText}>{index + 1}</Text>
+                        </View>
+                        <Text style={styles.stepText}>{step}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoTitle}>为什么这套方案适合现在</Text>
+                  <Text style={styles.infoBody}>
+                    当前页面仅展示实时返回的收益池策略，方便你继续在对话页确认金额、风险偏好和执行条件。
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <View style={styles.emptyPlanCard}>
+                <Text style={styles.emptyPlanTitle}>暂未获取到在线策略</Text>
+                <Text style={styles.emptyPlanText}>当前不会再展示任何本地兜底收益模板。你可以下拉刷新，或回到对话页换一种自然语言描述后重新生成。</Text>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -722,6 +715,27 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: TEXT_BODY,
     marginBottom: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.55,
+  },
+  emptyPlanCard: {
+    borderRadius: 24,
+    padding: 20,
+    backgroundColor: '#FAF7FF',
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 8,
+  },
+  emptyPlanTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: TEXT_PRIMARY,
+  },
+  emptyPlanText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: TEXT_MUTED,
   },
   infoCaption: {
     fontSize: 12,
