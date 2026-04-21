@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import {
+  deleteAgentWalletOtpSession,
+  getAgentWalletOtpSession,
+  saveAgentWalletOtpSession,
+} from "../db";
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const LOGIN_METHOD = "agent_wallet_email";
@@ -58,6 +63,42 @@ type RequestState = {
 };
 
 const pendingOtpStore = new Map<string, PendingOtp>();
+
+async function loadPendingOtpRequestState(email: string): Promise<RequestState | null> {
+  const now = Date.now();
+  const cached = pendingOtpStore.get(email);
+  if (cached && cached.expiresAt > now) {
+    return {
+      email,
+      flowId: cached.flowId,
+      tempPubKey: cached.tempPubKey,
+      issuedAt: now,
+    };
+  }
+
+  const persisted = await getAgentWalletOtpSession(email);
+  if (!persisted || !persisted.flowId || !persisted.tempPubKey) {
+    return null;
+  }
+
+  if (persisted.expiresAt <= now) {
+    await deleteAgentWalletOtpSession(email);
+    return null;
+  }
+
+  pendingOtpStore.set(email, {
+    flowId: persisted.flowId,
+    tempPubKey: persisted.tempPubKey,
+    expiresAt: persisted.expiresAt,
+  });
+
+  return {
+    email,
+    flowId: persisted.flowId,
+    tempPubKey: persisted.tempPubKey,
+    issuedAt: now,
+  };
+}
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -381,10 +422,17 @@ async function sendOtpByOkx(email: string): Promise<SendOtpResponse> {
     issuedAt: Date.now(),
   };
 
+  const expiresAt = Date.now() + OTP_TTL_MS;
   pendingOtpStore.set(email, {
     flowId,
     tempPubKey,
-    expiresAt: Date.now() + OTP_TTL_MS,
+    expiresAt,
+  });
+  await saveAgentWalletOtpSession({
+    email,
+    flowId,
+    tempPubKey,
+    expiresAt,
   });
 
   return {
@@ -398,20 +446,7 @@ async function sendOtpByOkx(email: string): Promise<SendOtpResponse> {
 }
 
 async function verifyOtpByOkx({ email, code, requestId }: VerifyOtpInput): Promise<VerifyOtpResponse> {
-  const requestState =
-    (requestId ? parseRequestState(requestId, email) : null) ||
-    (() => {
-      const cached = pendingOtpStore.get(email);
-      if (cached && cached.expiresAt > Date.now()) {
-        return {
-          email,
-          flowId: cached.flowId,
-          tempPubKey: cached.tempPubKey,
-          issuedAt: Date.now(),
-        } as RequestState;
-      }
-      return null;
-    })();
+  const requestState = (requestId ? parseRequestState(requestId, email) : null) || (await loadPendingOtpRequestState(email));
 
   if (!requestState?.flowId || !requestState?.tempPubKey) {
     throw new Error("验证码会话已失效，请重新获取验证码");
@@ -441,6 +476,7 @@ async function verifyOtpByOkx({ email, code, requestId }: VerifyOtpInput): Promi
   }
 
   pendingOtpStore.delete(email);
+  await deleteAgentWalletOtpSession(email);
 
   return {
     success: true,

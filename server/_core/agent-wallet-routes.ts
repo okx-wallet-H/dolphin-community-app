@@ -116,8 +116,10 @@ export function registerAgentWalletRoutes(app: Express) {
   };
 
   app.get("/api/agent-wallet/send-code", handleSendOtpInfo);
+  app.get("/api/agent-wallet/send-otp", handleSendOtpInfo);
 
   app.post("/api/agent-wallet/send-code", handleSendOtp);
+  app.post("/api/agent-wallet/send-otp", handleSendOtp);
 
   const handleVerifyInfo = (_req: Request, res: Response) => {
     res.status(405).json({
