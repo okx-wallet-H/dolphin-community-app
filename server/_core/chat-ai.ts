@@ -861,7 +861,7 @@ async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | nu
     };
   }
 
-  if (/(换成|兑换|swap|换币)/i.test(normalized)) {
+  if (/(换成|兑换|swap|换币|买入|购买|买\s*\d|卖出|出售|用\s*\d+(?:\.\d+)?\s*(?:u|usdt|usdc)\s*买)/i.test(normalized)) {
     return {
       action: 'swap',
       confidence: 0.86,

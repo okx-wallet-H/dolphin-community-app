@@ -73,19 +73,92 @@ type SwapTokenConfig = {
   chainKind: "evm" | "solana";
 };
 
-const SWAP_TOKEN_CONFIG: Record<"evm" | "solana", Record<string, SwapTokenConfig>> = {
-  evm: {
-    USDT: { symbol: "USDT", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6, chainIndex: "1", chainKind: "evm" },
-    USDC: { symbol: "USDC", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6, chainIndex: "1", chainKind: "evm" },
-    ETH: { symbol: "ETH", address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18, chainIndex: "1", chainKind: "evm" },
-    BTC: { symbol: "BTC", address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8, chainIndex: "1", chainKind: "evm" },
-  },
-  solana: {
-    USDT: { symbol: "USDT", address: "Es9vMFrzaCERmJfrF4H2h1bD9n1VWeNseyX2VINeodui", decimals: 6, chainIndex: "501", chainKind: "solana" },
-    USDC: { symbol: "USDC", address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, chainIndex: "501", chainKind: "solana" },
-    SOL: { symbol: "SOL", address: "So11111111111111111111111111111111111111112", decimals: 9, chainIndex: "501", chainKind: "solana" },
-  },
+type QuickSwapIntent = {
+  amount: string;
+  fromSymbol: string;
+  toSymbol: string;
+  chainKind: "evm" | "solana" | null;
 };
+
+const EVM_SWAP_TOKEN_CANDIDATES: Record<string, SwapTokenConfig[]> = {
+  USDT: [
+    { symbol: "USDT", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6, chainIndex: "1", chainKind: "evm" },
+    { symbol: "USDT", address: "0x55d398326f99059fF775485246999027B3197955", decimals: 18, chainIndex: "56", chainKind: "evm" },
+  ],
+  USDC: [{ symbol: "USDC", address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6, chainIndex: "1", chainKind: "evm" }],
+  ETH: [{ symbol: "ETH", address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", decimals: 18, chainIndex: "1", chainKind: "evm" }],
+  BTC: [{ symbol: "BTC", address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8, chainIndex: "1", chainKind: "evm" }],
+  BNB: [{ symbol: "BNB", address: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", decimals: 18, chainIndex: "56", chainKind: "evm" }],
+};
+
+const SOLANA_SWAP_TOKEN_CANDIDATES: Record<string, SwapTokenConfig[]> = {
+  USDT: [{ symbol: "USDT", address: "Es9vMFrzaCERmJfrF4H2h1bD9n1VWeNseyX2VINeodui", decimals: 6, chainIndex: "501", chainKind: "solana" }],
+  USDC: [{ symbol: "USDC", address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, chainIndex: "501", chainKind: "solana" }],
+  SOL: [{ symbol: "SOL", address: "So11111111111111111111111111111111111111112", decimals: 9, chainIndex: "501", chainKind: "solana" }],
+};
+
+const SYMBOL_ALIASES: Record<string, string> = {
+  U: "USDT",
+  USDT: "USDT",
+  USDC: "USDC",
+  ETH: "ETH",
+  BTC: "BTC",
+  SOL: "SOL",
+  BNB: "BNB",
+  WBNB: "BNB",
+};
+
+function normalizeTradeSymbol(value: string) {
+  const raw = value.replace(/[^a-zA-Z]/g, "").toUpperCase();
+  return SYMBOL_ALIASES[raw] || raw;
+}
+
+function getSwapTokenCandidates(kind: "evm" | "solana", symbol: string) {
+  const normalizedSymbol = normalizeTradeSymbol(symbol);
+  if (kind === "solana") {
+    return SOLANA_SWAP_TOKEN_CANDIDATES[normalizedSymbol] || [];
+  }
+  return EVM_SWAP_TOKEN_CANDIDATES[normalizedSymbol] || [];
+}
+
+function parseQuickSwapIntent(message: string): QuickSwapIntent | null {
+  const normalized = message.replace(/[，。；、]/g, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+
+  const directSwapMatch = normalized.match(/(\d+(?:\.\d+)?)\s*([A-Za-z]{1,10}|U)\s*(?:换成|兑换|换|swap(?:\s+to)?|to)\s*([A-Za-z]{2,10})/i);
+  if (directSwapMatch) {
+    const [, amount, fromRaw, toRaw] = directSwapMatch;
+    const fromSymbol = normalizeTradeSymbol(fromRaw);
+    const toSymbol = normalizeTradeSymbol(toRaw);
+    const chainKind = toSymbol === "SOL" || fromSymbol === "SOL" ? "solana" : "evm";
+    if (fromSymbol && toSymbol && amount) {
+      return { amount, fromSymbol, toSymbol, chainKind };
+    }
+  }
+
+  const buyMatch = normalized.match(/(?:帮我)?(?:买入|购买|买|购入)\s*(\d+(?:\.\d+)?)\s*(?:U|USDT|USDC)\s*(?:的)?\s*([A-Za-z]{2,10})/i)
+    || normalized.match(/(?:帮我)?(?:用)?\s*(\d+(?:\.\d+)?)\s*(?:U|USDT|USDC)\s*(?:买入|购买|买|购入)\s*([A-Za-z]{2,10})/i);
+  if (buyMatch) {
+    const [, amount, toRaw] = buyMatch;
+    const toSymbol = normalizeTradeSymbol(toRaw);
+    const chainKind = toSymbol === "SOL" ? "solana" : "evm";
+    if (toSymbol && amount) {
+      return { amount, fromSymbol: "USDT", toSymbol, chainKind };
+    }
+  }
+
+  const sellMatch = normalized.match(/(?:帮我)?(?:卖出|出售)\s*(\d+(?:\.\d+)?)\s*([A-Za-z]{2,10})/i);
+  if (sellMatch) {
+    const [, amount, fromRaw] = sellMatch;
+    const fromSymbol = normalizeTradeSymbol(fromRaw);
+    const chainKind = fromSymbol === "SOL" ? "solana" : "evm";
+    if (fromSymbol && amount) {
+      return { amount, fromSymbol, toSymbol: "USDT", chainKind };
+    }
+  }
+
+  return null;
+}
 
 type ChatCard =
   | { kind: "price"; symbol: string; price: number; change?: number | null }
@@ -141,19 +214,26 @@ function resolveSwapConfig(intent: {
   const preferredKinds = intent.chainKind ? [intent.chainKind] : (["evm", "solana"] as const);
 
   for (const kind of preferredKinds) {
-    const fromConfig = SWAP_TOKEN_CONFIG[kind][intent.fromSymbol];
-    const toConfig = SWAP_TOKEN_CONFIG[kind][intent.toSymbol];
     const userWalletAddress = kind === "solana" ? wallet?.solanaAddress : wallet?.evmAddress;
-    if (fromConfig && toConfig && userWalletAddress) {
-      return {
-        chainKind: kind,
-        chainIndex: fromConfig.chainIndex,
-        fromConfig,
-        toConfig,
-        userWalletAddress,
-        displayAmount: intent.amount,
-        amount: parseUnits(intent.amount, fromConfig.decimals),
-      };
+    if (!userWalletAddress) continue;
+
+    const fromCandidates = getSwapTokenCandidates(kind, intent.fromSymbol);
+    const toCandidates = getSwapTokenCandidates(kind, intent.toSymbol);
+
+    for (const fromConfig of fromCandidates) {
+      for (const toConfig of toCandidates) {
+        if (fromConfig.chainIndex !== toConfig.chainIndex) continue;
+
+        return {
+          chainKind: kind,
+          chainIndex: fromConfig.chainIndex,
+          fromConfig,
+          toConfig,
+          userWalletAddress,
+          displayAmount: intent.amount,
+          amount: parseUnits(intent.amount, fromConfig.decimals),
+        };
+      }
     }
   }
 
@@ -265,8 +345,9 @@ export default function ChatScreen() {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as WalletSnapshot;
+        const parsed = raw ? (JSON.parse(raw) as WalletSnapshot) : null;
+
+        if (parsed?.evmAddress || parsed?.solanaAddress) {
           if (mounted) setWallet(parsed);
           return;
         }
@@ -308,21 +389,47 @@ export default function ChatScreen() {
     push([{ id: `a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, role: "assistant", content, card }]);
   }, [push]);
 
-  const handleSwapFlow = useCallback(async (text: string, aiReply: string) => {
-    if (!wallet || wallet.mockMode) {
-      appendAssistant("当前钱包还没完成真实初始化，暂时不能直接执行一句话交易。请先完成真实 Agent Wallet 登录。\n");
+  const handleSwapFlow = useCallback(async (text: string, aiReply: string, quickIntent?: QuickSwapIntent | null) => {
+    let activeWallet = wallet;
+
+    if (!activeWallet || activeWallet.mockMode || (!activeWallet.evmAddress && !activeWallet.solanaAddress)) {
+      try {
+        const me = await getMe();
+        if (me.wallet?.evmAddress || me.wallet?.solanaAddress) {
+          activeWallet = {
+            email: me.wallet.email ?? me.email ?? undefined,
+            evmAddress: me.wallet.evmAddress ?? "",
+            solanaAddress: me.wallet.solanaAddress ?? "",
+            mockMode: false,
+          };
+          setWallet(activeWallet);
+          await AsyncStorage.setItem(
+            WALLET_STORAGE_KEY,
+            JSON.stringify({ ...activeWallet, updatedAt: new Date().toISOString() }),
+          );
+        }
+      } catch (error) {
+        console.warn("Restore wallet before swap failed:", error);
+      }
+    }
+
+    if (!activeWallet || activeWallet.mockMode || (!activeWallet.evmAddress && !activeWallet.solanaAddress)) {
+      appendAssistant("当前会话还没恢复出真实 Agent Wallet 地址。请重新登录一次，随后即可直接执行一句话交易。\n");
       return;
     }
 
-    const dexIntentResponse = await parseDexSwapIntent(text);
-    if (dexIntentResponse.intent.action !== "swap") {
+    const parsedIntent = quickIntent ?? parseQuickSwapIntent(text);
+    const remoteIntent = parsedIntent ? null : await parseDexSwapIntent(text);
+    const finalIntent = parsedIntent ?? (remoteIntent?.intent.action === "swap" ? remoteIntent.intent : null);
+
+    if (!finalIntent) {
       appendAssistant(aiReply || "我已识别到交易需求，但还没能把这句话解析成明确的兑换参数，请再说清楚一点，例如“100 USDT 换 ETH”。");
       return;
     }
 
-    const resolved = resolveSwapConfig(dexIntentResponse.intent, wallet);
+    const resolved = resolveSwapConfig(finalIntent, activeWallet);
     if (!resolved) {
-      appendAssistant(`暂时只支持主流资产的一句话自动交易：${dexIntentResponse.intent.fromSymbol || "FROM"} → ${dexIntentResponse.intent.toSymbol || "TO"} 这条链路还未接入，或当前钱包缺少对应链地址。`);
+      appendAssistant(`暂时只支持主流资产的一句话自动交易：${finalIntent.fromSymbol || "FROM"} → ${finalIntent.toSymbol || "TO"} 这条链路还未接入，或当前钱包缺少对应链地址。`);
       return;
     }
 
@@ -338,12 +445,17 @@ export default function ChatScreen() {
       chainKind: resolved.chainKind,
     } as const;
 
-    const preview = await previewOnchainSwap(payload);
-    const execution = await executeOnchainSwap({ ...payload, slippagePercent: "0.5" });
+    const [preview, execution] = await Promise.all([
+      previewOnchainSwap(payload).catch(() => null),
+      executeOnchainSwap({ ...payload, slippagePercent: "0.5" }),
+    ]);
     const txAwareExecution = execution as unknown as Record<string, unknown>;
+    const executionError = typeof txAwareExecution.error === "string" ? txAwareExecution.error : undefined;
 
     appendAssistant(
-      aiReply || `已按你的句子自动完成 ${resolved.displayAmount} ${resolved.fromConfig.symbol} → ${resolved.toConfig.symbol} 的预览与执行。`,
+      aiReply || (execution.phase === "awaiting_confirmation"
+        ? `已生成 ${resolved.displayAmount} ${resolved.fromConfig.symbol} → ${resolved.toConfig.symbol} 的真实交易请求，等待 Agent Wallet 完成确认。`
+        : `已按你的句子发起 ${resolved.displayAmount} ${resolved.fromConfig.symbol} → ${resolved.toConfig.symbol} 的真实交易链路。`),
       {
         kind: "swap",
         phase: execution.phase,
@@ -351,11 +463,12 @@ export default function ChatScreen() {
         fromSymbol: resolved.fromConfig.symbol,
         toSymbol: resolved.toConfig.symbol,
         chainKind: resolved.chainKind,
-        quoteToAmount: preview.quote.toAmount ? `${preview.quote.toAmount} ${resolved.toConfig.symbol}` : undefined,
-        minReceived: preview.quote.minReceived ? `${preview.quote.minReceived} ${resolved.toConfig.symbol}` : undefined,
+        quoteToAmount: preview?.quote?.toAmount ? `${preview.quote.toAmount} ${resolved.toConfig.symbol}` : undefined,
+        minReceived: preview?.quote?.minReceived ? `${preview.quote.minReceived} ${resolved.toConfig.symbol}` : undefined,
         orderId: execution.orderId,
         txHash: execution.txHash,
         txId: typeof txAwareExecution.txId === "string" ? txAwareExecution.txId : undefined,
+        errorMessage: execution.phase === "failed" ? executionError || "交易执行失败，请稍后重试。" : undefined,
       },
     );
   }, [appendAssistant, wallet]);
@@ -368,6 +481,13 @@ export default function ChatScreen() {
     setBusy(true);
 
     try {
+      const quickSwapIntent = parseQuickSwapIntent(text);
+      if (quickSwapIntent) {
+        appendAssistant(`已识别交易指令，正在获取 ${quickSwapIntent.amount} ${quickSwapIntent.fromSymbol} → ${quickSwapIntent.toSymbol} 的实时报价并提交真实交易...`);
+        await handleSwapFlow(text, "", quickSwapIntent);
+        return;
+      }
+
       const ai = await parseChatAiIntent({ message: text, wallet: wallet ?? undefined });
       if (!("intent" in ai) || !ai.intent) {
         appendAssistant("当前消息已命中特殊策略链路，后续我会继续把这一类结构化结果也接进同一个自动执行界面。");
@@ -386,6 +506,7 @@ export default function ChatScreen() {
         const priceNum = parseFloat(ai.intent.priceText.replace(/[^0-9.]/g, "")) || 0;
         appendAssistant(reply, { kind: "price", symbol: ai.intent.priceSymbol, price: priceNum, change: null });
       } else if (ai.intent.action === "swap") {
+        appendAssistant("已识别交易意图，正在获取实时报价并提交真实交易...");
         await handleSwapFlow(text, reply);
       } else {
         appendAssistant(reply);

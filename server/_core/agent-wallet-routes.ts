@@ -151,6 +151,11 @@ export function registerAgentWalletRoutes(app: Express) {
       const sessionToken = await sdk.createSessionToken(result.sessionUser.openId, {
         name: result.sessionUser.name,
         expiresInMs: ONE_YEAR_MS,
+        wallet: {
+          email: result.wallet.email,
+          evmAddress: result.wallet.evmAddress,
+          solanaAddress: result.wallet.solanaAddress,
+        },
       });
 
       const cookieOptions = getSessionCookieOptions(req);
@@ -176,11 +181,31 @@ export function registerAgentWalletRoutes(app: Express) {
 
   app.get("/api/agent-wallet/me", async (req: Request, res: Response) => {
     try {
+      const authHeader = req.headers.authorization || req.headers.Authorization;
+      const bearerToken = typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length).trim()
+        : undefined;
+      const cookieHeader = typeof req.headers.cookie === "string" ? req.headers.cookie : "";
+      const sessionCookie = cookieHeader
+        .split(";")
+        .map((entry) => entry.trim())
+        .find((entry) => entry.startsWith(`${COOKIE_NAME}=`))
+        ?.slice(COOKIE_NAME.length + 1);
+      const session = await sdk.verifySession(bearerToken || sessionCookie);
       const user = await sdk.authenticateRequest(req);
-      res.json({ user: buildUserResponse(user) });
+      res.json({
+        user: buildUserResponse(user),
+        wallet: session?.wallet
+          ? {
+              email: session.wallet.email ?? user.email ?? null,
+              evmAddress: session.wallet.evmAddress ?? "",
+              solanaAddress: session.wallet.solanaAddress ?? "",
+            }
+          : null,
+      });
     } catch (error) {
       console.error("[Agent Wallet] get current user failed", error);
-      res.status(401).json({ error: "Not authenticated", user: null });
+      res.status(401).json({ error: "Not authenticated", user: null, wallet: null });
     }
   });
 
