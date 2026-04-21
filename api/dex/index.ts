@@ -23,7 +23,14 @@ function sendNotFound(res: VercelResponse) {
 function getDexConfigSnapshot() {
   const hasApiKey = Boolean(process.env.OKX_DEX_API_KEY || process.env.OKX_API_KEY || process.env.OKX_ONCHAIN_API_KEY);
   const hasSecretKey = Boolean(process.env.OKX_DEX_SECRET_KEY || process.env.OKX_API_SECRET || process.env.OKX_SECRET_KEY || process.env.OKX_ONCHAIN_SECRET_KEY);
-  const hasPassphrase = Boolean(process.env.OKX_DEX_PASSPHRASE || process.env.OKX_API_PASSPHRASE || process.env.OKX_PASSPHRASE || process.env.OKX_ONCHAIN_PASSPHRASE);
+  const hasPassphrase = Boolean(
+    process.env.OKX_DEX_PASSPHRASE ||
+      process.env.OKX_API_PASSPHRASE ||
+      process.env.OKX_PASSPHRASE ||
+      process.env.OKX_ONCHAIN_PASSPHRASE ||
+      process.env.OKX_密码短语 ||
+      process.env.OKX_API_密码
+  );
   const provider = hasApiKey && hasSecretKey && hasPassphrase ? 'okx' : 'mock';
   return {
     provider,
