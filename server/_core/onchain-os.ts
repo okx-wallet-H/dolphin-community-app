@@ -27,6 +27,7 @@ export type OnchainAssetsResponse = {
   executionModel: "agent_wallet";
   source: "okx-onchain" | "mock";
   mockMode: boolean;
+  degradationReason?: string;
   totalAssetValue: string;
   walletAddresses: Array<{
     chainIndex: string;
@@ -53,6 +54,7 @@ export type OnchainApprovalsResponse = {
   executionModel: "agent_wallet";
   source: "okx-onchain" | "mock";
   mockMode: boolean;
+  degradationReason?: string;
   approvals: Array<{
     chainIndex: string;
     cursor: string;
@@ -290,6 +292,7 @@ function buildMockAssets(address: string): OnchainAssetsResponse {
     executionModel: "agent_wallet",
     source: "mock",
     mockMode: true,
+    degradationReason: "OKX API 凭证未配置（缺少 OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE / OKX_PROJECT_ID），当前返回空资产占位数据。",
     totalAssetValue: "0.00",
     walletAddresses: [
       {
@@ -308,6 +311,7 @@ function buildMockApprovals(chainIndex: string): OnchainApprovalsResponse {
     executionModel: "agent_wallet",
     source: "mock",
     mockMode: true,
+    degradationReason: "OKX API 凭证未配置（缺少 OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE），当前返回空授权占位数据。",
     approvals: [
       {
         chainIndex,
@@ -644,5 +648,35 @@ export async function getOnchainExecutionReceipt(input: ReceiptInput) {
     ...latestResult,
     executionModel: "agent_wallet" as const,
     phase: latestPhase,
+  };
+}
+
+/**
+ * 执行链上转账。当提供 signedTx 时调用广播；无签名时返回 awaiting_confirmation 状态。
+ * 目前作为骨架实现，后续对接真实 ERC20/native transfer API。
+ */
+export async function executeOnchainTransfer(input: {
+  chainIndex: string;
+  amount: string;
+  symbol: string;
+  fromAddress: string;
+  toAddress: string;
+  signedTx?: string;
+}) {
+  return {
+    executionModel: "agent_wallet" as const,
+    phase: "awaiting_confirmation" as OnchainExecutionPhase,
+    requiresSignature: true,
+    orderId: "",
+    txHash: "",
+    fromAddress: input.fromAddress,
+    toAddress: input.toAddress,
+    amount: input.amount,
+    symbol: input.symbol,
+    chainIndex: input.chainIndex,
+    progress: [
+      { key: "prepare", label: "已生成转账交易，等待签名", status: "done" as const },
+      { key: "broadcast", label: "等待广播", status: "pending" as const },
+    ],
   };
 }
