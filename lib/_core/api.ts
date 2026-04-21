@@ -382,6 +382,21 @@ export type DexOrdersResponse = {
   raw?: unknown;
 };
 
+export type PublicCapabilityStatusResponse = {
+  success: true;
+  agentWallet: {
+    providerMode: 'okx' | 'mock';
+    walletEmailLogin: boolean;
+  };
+  onchainOs: {
+    providerMode: 'okx' | 'mock';
+    authMode: 'api_key' | 'mock';
+    executionModel: 'agent_wallet';
+    projectIdConfigured: boolean;
+    builderCodeConfigured: boolean;
+  };
+};
+
 export type OnchainOsConfigResponse = {
   success: true;
   user: {
@@ -1472,6 +1487,10 @@ async function getSolanaTokenMetadataMap(): Promise<Record<string, SolanaTracked
 
 export async function getDexConfig(): Promise<DexConfigResponse> {
   return (await apiCall('/api/dex/config')) as DexConfigResponse;
+}
+
+export async function getPublicCapabilityStatus(): Promise<PublicCapabilityStatusResponse> {
+  return (await apiCall('/api/public/capabilities')) as PublicCapabilityStatusResponse;
 }
 
 export async function getOnchainOsConfig(): Promise<OnchainOsConfigResponse> {

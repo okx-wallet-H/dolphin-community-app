@@ -58,6 +58,11 @@ export function createApp() {
     registerAgentWalletRoutes(app);
   });
 
+  safeRegister(app, "public capability routes", () => {
+    const { registerPublicCapabilitiesRoutes } = require("./_core/public-capabilities-routes");
+    registerPublicCapabilitiesRoutes(app);
+  });
+
   safeRegister(app, "dex swap routes", () => {
     const { registerDexSwapRoutes } = require("./_core/dex-swap-routes");
     registerDexSwapRoutes(app);
