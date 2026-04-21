@@ -473,6 +473,7 @@ const MOCK_PRICE_TABLE: Record<string, { price: string; change24h: string; trend
   ETH: { price: '3,420', change24h: '+1.26%', trend: 'ETH 维持温和上行，波动相对平稳。' },
   SOL: { price: '182', change24h: '+4.12%', trend: 'SOL 活跃度较高，短线弹性更明显。' },
   USDT: { price: '1.00', change24h: '+0.01%', trend: '稳定币价格基本稳定。' },
+  OKB: { price: '52.80', change24h: '+1.18%', trend: 'OKB 近期波动相对温和，适合继续观察量价配合。' },
 };
 
 const MARKET_SYMBOL_ALIAS: Record<string, string> = {
@@ -491,6 +492,11 @@ const MARKET_SYMBOL_ALIAS: Record<string, string> = {
   USDT: 'USDT',
   泰达币: 'USDT',
   泰達幣: 'USDT',
+  OKB: 'OKB',
+  欧易平台币: 'OKB',
+  歐易平台幣: 'OKB',
+  OKX平台币: 'OKB',
+  OKX平台幣: 'OKB',
 };
 
 const MARKET_TOKEN_MAP: Record<string, { chainIndex: string; tokenContractAddress: string }> = {
@@ -510,12 +516,17 @@ const MARKET_TOKEN_MAP: Record<string, { chainIndex: string; tokenContractAddres
     chainIndex: '1',
     tokenContractAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
   },
+  OKB: {
+    chainIndex: '1',
+    tokenContractAddress: '0x75231F58b43240C9718Dd58B4967c5114342a86c',
+  },
 };
 
 const MARKET_OKX_INST_ID_MAP: Record<string, string> = {
   BTC: 'BTC-USDT',
   ETH: 'ETH-USDT',
   SOL: 'SOL-USDT',
+  OKB: 'OKB-USDT',
 };
 
 const MOCK_ASSET_TOKENS = [
@@ -601,8 +612,17 @@ function normalizeText(value: unknown, fallback = '') {
   return typeof value === 'string' ? value.trim() : fallback;
 }
 
-function normalizeMarketSymbol(symbol: string) {
-  return MARKET_SYMBOL_ALIAS[normalizeText(symbol, 'BTC').toUpperCase()] || 'BTC';
+function normalizeMarketSymbol(symbol: string, fallback = '') {
+  return MARKET_SYMBOL_ALIAS[normalizeText(symbol).toUpperCase()] || fallback;
+}
+
+function findMarketSymbolFromMessage(message: string, fallback = '') {
+  const normalized = normalizeText(message);
+  if (!normalized) return fallback;
+
+  const aliases = Object.keys(MARKET_SYMBOL_ALIAS).sort((a, b) => b.length - a.length);
+  const matchedAlias = aliases.find((alias) => normalized.toUpperCase().includes(alias.toUpperCase()));
+  return matchedAlias ? MARKET_SYMBOL_ALIAS[matchedAlias] : fallback;
 }
 
 function extractJsonContent(payload: Record<string, unknown>) {
@@ -716,6 +736,7 @@ async function buildMarketReply(symbol: string): Promise<MarketReply> {
       BTC: { address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', chain: 'ethereum' },
       ETH: { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', chain: 'ethereum' },
       SOL: { address: 'So11111111111111111111111111111111111111112', chain: 'solana' },
+      OKB: { address: '0x75231f58b43240c9718dd58b4967c5114342a86c', chain: 'ethereum' },
     };
     const target = symbolToAddress[normalized];
     if (target) {
@@ -763,11 +784,10 @@ function buildAssetSummary(wallet?: WalletSnapshot | null) {
 
 async function buildFallbackIntent(message: string, wallet?: WalletSnapshot | null): Promise<ChatAiIntent> {
   const normalized = message.trim();
-  const upper = normalized.toUpperCase();
+  const matchedMarketSymbol = findMarketSymbolFromMessage(normalized);
 
-  if (/\b(BTC|ETH|SOL|USDT)\b/.test(upper) && /(多少|价格|行情|涨|跌|price)/i.test(normalized)) {
-    const symbol = (upper.match(/BTC|ETH|SOL|USDT/) || ['BTC'])[0];
-    const market = await buildMarketReply(symbol);
+  if (matchedMarketSymbol && /(多少|价格|行情|涨|跌|price)/i.test(normalized)) {
+    const market = await buildMarketReply(matchedMarketSymbol);
     return {
       action: 'market',
       confidence: 0.78,
@@ -895,13 +915,14 @@ async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot
 
   const parsed = JSON.parse(content) as Record<string, unknown>;
   const action = normalizeAction(parsed.action);
-  const priceSymbol = normalizeMarketSymbol(normalizeText(parsed.priceSymbol));
+  const inferredPriceSymbol = findMarketSymbolFromMessage(message);
+  const priceSymbol = normalizeMarketSymbol(normalizeText(parsed.priceSymbol), inferredPriceSymbol);
   const assetSummary = normalizeText(parsed.assetSummary) || (action === 'asset' ? buildAssetSummary(wallet) : '');
   const swapMessage = normalizeText(parsed.swapMessage) || (action === 'swap' ? message.trim() : '');
   let reply = normalizeText(parsed.reply);
 
   if (action === 'market') {
-    const market = await buildMarketReply(priceSymbol || 'BTC');
+    const market = await buildMarketReply(priceSymbol || inferredPriceSymbol || 'BTC');
     reply = market.reply || reply;
     return {
       action,

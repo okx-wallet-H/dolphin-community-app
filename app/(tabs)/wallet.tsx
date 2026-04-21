@@ -5,7 +5,7 @@ import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
@@ -66,6 +66,7 @@ const TOKENS: Record<string, { letter: string; bg: string; fg: string }> = {
 type ChainCard = AgentWalletAssetsResponse["walletAddresses"][number];
 function fmt(v: number, d = 2) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }).format(v); }
 function toNum(v: unknown) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function shortAddress(address: string) { return address.length > 18 ? `${address.slice(0, 8)}...${address.slice(-8)}` : address; }
 
 /* ── Donut Chart ────────────────────────────────── */
 function DonutChart({ size = 100 }: { size?: number }) {
@@ -169,6 +170,7 @@ export default function WalletScreen() {
   const [assets, setAssets] = useState<AgentWalletAssetsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   const totalUsd = useMemo(() => toNum(assets?.totalAssetValue) || 12450, [assets?.totalAssetValue]);
   const chainCards = useMemo<ChainCard[]>(() => assets?.walletAddresses || [], [assets?.walletAddresses]);
@@ -184,6 +186,42 @@ export default function WalletScreen() {
     { symbol: "USDT", balance: "20", valueUsd: "20", tokenPrice: "1.00", logoUrl: "", tokenAddress: "", tokenName: "Tether", chainIndex: "1", chainName: "Ethereum", address: "", isRiskToken: false },
   ] as WalletAssetItem[];
   const display = allAssets.length ? allAssets : mock;
+  const depositAddresses = useMemo(() => {
+    const resolved = chainCards
+      .filter((item) => item.address)
+      .map((item) => ({
+        key: `${item.chainIndex}-${item.address}`,
+        chainName: item.chainName,
+        networkLabel:
+          item.chainIndex === "501" || item.chainName.toLowerCase().includes("solana")
+            ? "Solana 充值地址"
+            : "EVM 充值地址（建议优先使用）",
+        address: item.address,
+      }));
+
+    if (resolved.length) {
+      return resolved;
+    }
+
+    const fallback = [] as { key: string; chainName: string; networkLabel: string; address: string }[];
+    if (wallet?.evmAddress) {
+      fallback.push({
+        key: `evm-${wallet.evmAddress}`,
+        chainName: "Ethereum",
+        networkLabel: "EVM 充值地址（建议优先使用）",
+        address: wallet.evmAddress,
+      });
+    }
+    if (wallet?.solanaAddress) {
+      fallback.push({
+        key: `sol-${wallet.solanaAddress}`,
+        chainName: "Solana",
+        networkLabel: "Solana 充值地址",
+        address: wallet.solanaAddress,
+      });
+    }
+    return fallback;
+  }, [chainCards, wallet]);
 
   const loadAssets = useCallback(async (showLoading = true) => {
     try {
@@ -207,6 +245,9 @@ export default function WalletScreen() {
   }, [loadAssets]);
 
   const goChat = () => router.push("/(tabs)/chat");
+  const scrollToDeposit = useCallback(() => {
+    scrollRef.current?.scrollTo({ y: 320, animated: true });
+  }, []);
 
   return (
     <View style={s.root}>
@@ -226,6 +267,7 @@ export default function WalletScreen() {
         </View>
 
         <ScrollView
+          ref={scrollRef}
           style={s.scroll}
           contentContainerStyle={s.scrollPad}
           showsVerticalScrollIndicator={false}
@@ -264,13 +306,34 @@ export default function WalletScreen() {
               { icon: "swap-horizontal-outline" as const, label: "转账" },
               { icon: "logo-usd" as const, label: "买币" },
             ].map((a) => (
-              <Pressable key={a.label} style={s.actionBtn} onPress={goChat}>
+              <Pressable key={a.label} style={s.actionBtn} onPress={a.label === "收款" ? scrollToDeposit : goChat}>
                 <LinearGradient colors={["#9F7AEA", "#7C3AED"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.actionGrad}>
                   <Ionicons name={a.icon} size={18} color={T.white} />
                   <Text style={s.actionLabel}>{a.label}</Text>
                 </LinearGradient>
               </Pressable>
             ))}
+          </View>
+
+          <Text style={s.secTitle}>充值地址</Text>
+          <View style={s.addressList}>
+            {depositAddresses.length ? (
+              depositAddresses.map((item) => (
+                <View key={item.key} style={s.addressCard}>
+                  <View style={s.addressCardHead}>
+                    <Text style={s.addressChain}>{item.chainName}</Text>
+                    <Text style={s.addressLabel}>{item.networkLabel}</Text>
+                  </View>
+                  <Text style={s.addressValue}>{shortAddress(item.address)}</Text>
+                  <Text style={s.addressHint}>完整地址：{item.address}</Text>
+                </View>
+              ))
+            ) : (
+              <View style={s.addressCard}>
+                <Text style={s.addressChain}>未检测到 Agent Wallet 地址</Text>
+                <Text style={s.addressHint}>请先完成登录或重新进入钱包页刷新。</Text>
+              </View>
+            )}
           </View>
 
           {/* ── Dashboard Stats Grid ──────────────── */}
@@ -339,6 +402,15 @@ const s = StyleSheet.create({
   actionBtn: { flex: 1 },
   actionGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 14, borderRadius: 16, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 10 },
   actionLabel: { fontSize: 15, fontWeight: "700", color: T.white },
+
+  /* Deposit addresses */
+  addressList: { gap: 12, marginTop: 2 },
+  addressCard: { backgroundColor: T.cardSolid, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: T.glassBorder, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 12 },
+  addressCardHead: { gap: 4 },
+  addressChain: { fontSize: 15, fontWeight: "800", color: T.text },
+  addressLabel: { fontSize: 12, color: T.textSec, fontWeight: "600" },
+  addressValue: { fontSize: 18, fontWeight: "800", color: T.primaryDark, marginTop: 12 },
+  addressHint: { fontSize: 12, lineHeight: 18, color: T.textMuted, marginTop: 8 },
 
   /* Stats Grid */
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 20 },

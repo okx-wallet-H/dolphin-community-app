@@ -893,6 +893,11 @@ const MARKET_SYMBOL_ALIAS: Record<string, string> = {
   USDT: 'USDT',
   泰达币: 'USDT',
   泰達幣: 'USDT',
+  OKB: 'OKB',
+  欧易平台币: 'OKB',
+  歐易平台幣: 'OKB',
+  OKX平台币: 'OKB',
+  OKX平台幣: 'OKB',
 };
 
 const MARKET_PRICE_TARGET_MAP: Record<string, { chainIndex: string; tokenContractAddress: string }> = {
@@ -912,12 +917,17 @@ const MARKET_PRICE_TARGET_MAP: Record<string, { chainIndex: string; tokenContrac
     chainIndex: '1',
     tokenContractAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
   },
+  OKB: {
+    chainIndex: '1',
+    tokenContractAddress: '0x75231F58b43240C9718Dd58B4967c5114342a86c',
+  },
 };
 
 const MARKET_OKX_INST_ID_MAP: Record<string, string> = {
   BTC: 'BTC-USDT',
   ETH: 'ETH-USDT',
   SOL: 'SOL-USDT',
+  OKB: 'OKB-USDT',
 };
 
 function toNumber(value: unknown): number {
@@ -1283,6 +1293,7 @@ export async function getMarketSnapshotByMcp(symbol: string): Promise<MarketSnap
     BTC: { address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', chain: 'ethereum' }, // WBTC as proxy
     ETH: { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', chain: 'ethereum' },
     SOL: { address: 'So11111111111111111111111111111111111111112', chain: 'solana' },
+    OKB: { address: '0x75231f58b43240c9718dd58b4967c5114342a86c', chain: 'ethereum' },
     BNB: { address: '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c', chain: 'bsc' },
     SUI: { address: '0x2::sui::SUI', chain: 'sui' },
   };
