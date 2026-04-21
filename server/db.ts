@@ -12,12 +12,40 @@ export type AgentWalletOtpSession = {
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _agentWalletOtpTableReady = false;
+let _unsupportedDialectWarned = false;
 
-// 延迟创建 drizzle 实例，使本地工具可在无数据库的情况下运行
+function getDatabaseUrl() {
+  return process.env.DATABASE_URL?.trim() || "";
+}
+
+function getDatabaseScheme(databaseUrl: string) {
+  const match = /^([a-z0-9+.-]+):\/\//i.exec(databaseUrl);
+  return match?.[1]?.toLowerCase() || "unknown";
+}
+
+function isMysqlDatabaseUrl(databaseUrl: string) {
+  const scheme = getDatabaseScheme(databaseUrl);
+  return scheme === "mysql" || scheme === "mysql2";
+}
+
+// 延迟创建 drizzle 实例，使本地工具可在无数据库的情况下运行。
+// 当前仓库的数据层与 schema 都按 MySQL 方言编写；若线上暂时注入的是 PostgreSQL，
+// 这里主动降级为“无持久化数据库”模式，避免验证码发送在建表阶段直接失败。
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  const databaseUrl = getDatabaseUrl();
+  if (!_db && databaseUrl) {
+    if (!isMysqlDatabaseUrl(databaseUrl)) {
+      if (!_unsupportedDialectWarned) {
+        console.warn(
+          `[Database] DATABASE_URL uses unsupported dialect for current mysql driver: ${getDatabaseScheme(databaseUrl)}. Falling back to stateless mode.`,
+        );
+        _unsupportedDialectWarned = true;
+      }
+      return null;
+    }
+
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _db = drizzle(databaseUrl);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
