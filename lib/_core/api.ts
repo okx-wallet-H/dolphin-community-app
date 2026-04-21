@@ -1996,8 +1996,81 @@ export type StrategyLogsResponse = {
   tradeHistory: StrategyRawToolResult;
 };
 
+export type StrategySignalsResponse = {
+  marketPulse: Array<{
+    symbol: string;
+    chain: string;
+    price: string;
+    timestamp: string;
+    source: 'okx-mcp';
+    error?: string;
+  }>;
+  smartMoneySignals: Array<{
+    id: string;
+    tokenSymbol: string;
+    side: string;
+    walletAddress: string;
+    amountUsd: string;
+    timestamp: string;
+    raw: Record<string, unknown>;
+  }>;
+  smartMoneyRaw: Record<string, unknown>;
+};
+
+export type OnchainTaskLog = {
+  id: string;
+  txId?: string;
+  userId: string;
+  eventType: 'create' | 'execute' | 'receipt' | 'status' | 'failure' | 'duplicate';
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  context?: Record<string, unknown>;
+  createdAt: number;
+};
+
+export type OnchainTaskRecord = {
+  txId: string;
+  userId: string;
+  type: 'swap' | 'transfer';
+  phase: OnchainTxPhase;
+  chainIndex: string;
+  userWalletAddress: string;
+  broadcastAddress?: string;
+  fromToken?: string;
+  toToken?: string;
+  amount: string;
+  slippagePercent?: string;
+  orderId?: string;
+  txHash?: string;
+  idempotencyKey?: string;
+  retryCount: number;
+  lastError?: string;
+  lastResponse?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+  logs: OnchainTaskLog[];
+};
+
+export type OnchainTaskFeedResponse = {
+  success: true;
+  user: {
+    openId: string;
+  };
+  summary: {
+    total: number;
+    runningCount: number;
+    successCount: number;
+    failedCount: number;
+  };
+  tasks: OnchainTaskRecord[];
+};
+
 export async function getStrategyStatus(): Promise<StrategyStatusResponse> {
   return (await apiCall('/api/strategy/status')) as StrategyStatusResponse;
+}
+
+export async function getStrategySignals(): Promise<StrategySignalsResponse> {
+  return (await apiCall('/api/strategy/signals')) as StrategySignalsResponse;
 }
 
 export async function getStrategyPerformance(): Promise<StrategyPerformanceResponse> {
@@ -2010,4 +2083,16 @@ export async function getStrategyPositions(): Promise<StrategyPositionsResponse>
 
 export async function getStrategyLogs(): Promise<StrategyLogsResponse> {
   return (await apiCall('/api/strategy/logs')) as StrategyLogsResponse;
+}
+
+export async function getOnchainTaskFeed(params?: { limit?: string; txId?: string }): Promise<OnchainTaskFeedResponse> {
+  const query = new URLSearchParams();
+  if (params?.limit) {
+    query.append('limit', params.limit);
+  }
+  if (params?.txId) {
+    query.append('txId', params.txId);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return (await apiCall(`/api/onchain/tasks${suffix}`)) as OnchainTaskFeedResponse;
 }

@@ -28,8 +28,8 @@ const schemeFromBundleId = `manus${timestamp}`;
 
 const env = {
   // 应用品牌信息，直接在此处维护
-  appName: "海豚社区",
-  appSlug: "h3",
+  appName: "H Wallet",
+  appSlug: "h-wallet",
   // 应用 Logo 地址；留空时使用 assets/images/icon.png
   logoUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310519663458603911/AQ7DNFW2AtZXchZVZkUYdL/h-wallet-icon-UTsNtRdFQEnoWpyzgewLzd.png",
   scheme: schemeFromBundleId,

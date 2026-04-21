@@ -585,7 +585,7 @@ async function callPrimaryLlmIntentParser(message: string): Promise<IntentResult
       {
         role: "system",
         content:
-          "你是海豚社区的加密货币兑换意图解析器。只返回 JSON。字段必须包含 action, amount, fromSymbol, toSymbol, chainKind, confidence。action 只能是 swap 或 unknown。chainKind 只能是 evm、solana 或 null。amount 必须为字符串。confidence 为 0 到 1。不要返回 Markdown。",
+          "你是 H Wallet 的加密货币兑换意图解析器。只返回 JSON。字段必须包含 action, amount, fromSymbol, toSymbol, chainKind, confidence。action 只能是 swap 或 unknown。chainKind 只能是 evm、solana 或 null。amount 必须为字符串。confidence 为 0 到 1。不要返回 Markdown。",
       },
       {
         role: "user",

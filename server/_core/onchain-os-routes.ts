@@ -13,6 +13,8 @@ import {
   appendOnchainTxLog,
   createOnchainTxRecord,
   findOnchainTxByIdempotencyKey,
+  getOnchainTxLogs,
+  listOnchainTxs,
   updateOnchainTx,
   updateOnchainTxByOrderId,
 } from "./onchain-tx-store";
@@ -33,6 +35,11 @@ function getQueryString(req: Request, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function getQueryNumber(req: Request, key: string, fallback: number) {
+  const raw = Number(getQueryString(req, key));
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 async function requireAuth(req: Request, res: Response) {
   try {
     return await sdk.authenticateRequest(req);
@@ -44,6 +51,57 @@ async function requireAuth(req: Request, res: Response) {
 }
 
 export function registerOnchainOsRoutes(app: Express) {
+  app.get("/api/onchain/tasks", async (req: Request, res: Response) => {
+    const user = await requireAuth(req, res);
+    if (!user) return;
+
+    try {
+      const limit = Math.min(getQueryNumber(req, "limit", 12), 50);
+      const txId = getQueryString(req, "txId") || undefined;
+      const tasks = await listOnchainTxs(user.openId);
+      const filteredTasks = txId ? tasks.filter((item) => item.txId === txId) : tasks;
+      const selectedTasks = filteredTasks.slice(0, limit);
+      const allLogs = await getOnchainTxLogs();
+      const logsByTxId = new Map<string, ReturnType<typeof allLogs.filter>>();
+
+      for (const log of allLogs) {
+        if (!log.txId) continue;
+        const bucket = logsByTxId.get(log.txId) ?? [];
+        if (bucket.length < 8) {
+          bucket.push(log);
+          logsByTxId.set(log.txId, bucket);
+        }
+      }
+
+      const summary = filteredTasks.reduce(
+        (acc, item) => {
+          if (item.phase === "success") acc.successCount += 1;
+          else if (item.phase === "failed") acc.failedCount += 1;
+          else acc.runningCount += 1;
+          return acc;
+        },
+        { total: filteredTasks.length, runningCount: 0, successCount: 0, failedCount: 0 },
+      );
+
+      res.json({
+        success: true,
+        user: {
+          openId: user.openId,
+        },
+        summary,
+        tasks: selectedTasks.map((task) => ({
+          ...task,
+          logs: logsByTxId.get(task.txId) ?? [],
+        })),
+      });
+    } catch (error) {
+      console.error("[Onchain OS] tasks failed", error);
+      res.status(400).json({
+        error: error instanceof Error ? error.message : "Failed to query Onchain OS tasks",
+      });
+    }
+  });
+
   app.get("/api/onchain/config", async (req: Request, res: Response) => {
     const user = await requireAuth(req, res);
     if (!user) return;

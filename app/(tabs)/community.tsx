@@ -1,7 +1,7 @@
-import { useFocusEffect } from "@react-navigation/native";
+
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -17,20 +17,32 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
+  getOnchainTaskFeed,
   getStrategyLogs,
   getStrategyPerformance,
   getStrategyPositions,
+  getStrategySignals,
   getStrategyStatus,
+  type OnchainTaskFeedResponse,
+  type OnchainTaskRecord,
   type StrategyLogsResponse,
   type StrategyPerformanceResponse,
   type StrategyPositionsResponse,
   type StrategyRawToolResult,
+  type StrategySignalsResponse,
   type StrategyStatusResponse,
 } from "@/lib/_core/api";
 
 const PRIMARY = "#7C3AED";
 const PRIMARY_LIGHT = "#F5F3FF";
 const PAGE_BG = "#FCFAFF";
+const CARD_BG = "rgba(255,255,255,0.92)";
+const BORDER = "rgba(124,58,237,0.10)";
+const TEXT_PRIMARY = "#171923";
+const TEXT_SECONDARY = "#666C85";
+const SUCCESS = "#16A34A";
+const DANGER = "#DC2626";
+const WARNING = "#EA580C";
 
 const AGENT_PLAN_STORAGE_KEY = "hwallet-agent-plan";
 
@@ -39,6 +51,17 @@ type SyncedPlan = {
   draft: string;
   activatedAt: number;
 } | null;
+
+type StrategyCenterState = {
+  status: StrategyStatusResponse | null;
+  performance: StrategyPerformanceResponse | null;
+  positions: StrategyPositionsResponse | null;
+  logs: StrategyLogsResponse | null;
+  signals: StrategySignalsResponse | null;
+  taskFeed: OnchainTaskFeedResponse | null;
+};
+
+type RawRecord = Record<string, unknown>;
 
 async function loadSyncedPlan(): Promise<SyncedPlan> {
   try {
@@ -50,22 +73,6 @@ async function loadSyncedPlan(): Promise<SyncedPlan> {
     return null;
   }
 }
-const CARD_BG = "rgba(255,255,255,0.84)";
-const BORDER = "rgba(124,58,237,0.10)";
-const TEXT_PRIMARY = "#171923";
-const TEXT_SECONDARY = "#666C85";
-const SUCCESS = "#16A34A";
-const DANGER = "#DC2626";
-const WARNING = "#EA580C";
-
-type StrategyDashboardState = {
-  status: StrategyStatusResponse | null;
-  performance: StrategyPerformanceResponse | null;
-  positions: StrategyPositionsResponse | null;
-  logs: StrategyLogsResponse | null;
-};
-
-type RawRecord = Record<string, unknown>;
 
 function toObject(value: unknown): RawRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as RawRecord) : {};
@@ -107,12 +114,12 @@ function formatCurrency(value: unknown, digits = 2) {
   });
 }
 
-function formatCompactTime(value?: string) {
+function formatCompactTime(value?: string | number) {
   if (!value) {
     return "--";
   }
   const asNumber = Number(value);
-  const date = Number.isFinite(asNumber) && asNumber > 0 ? new Date(asNumber) : new Date(value);
+  const date = Number.isFinite(asNumber) && asNumber > 0 ? new Date(asNumber) : new Date(String(value));
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
@@ -132,7 +139,7 @@ function getStatusLabel(activeCount: number) {
   if (activeCount > 0) {
     return "运行中";
   }
-  return "暂无运行策略";
+  return "待触发";
 }
 
 function getStatusColor(activeCount: number) {
@@ -172,13 +179,27 @@ function extractRecentLogs(logs: StrategyLogsResponse | null) {
   ].slice(0, 8);
 }
 
+function getPhaseTone(phase: OnchainTaskRecord["phase"]) {
+  if (phase === "success") return { label: "已完成", color: SUCCESS, bg: `${SUCCESS}16` };
+  if (phase === "failed") return { label: "失败", color: DANGER, bg: `${DANGER}14` };
+  if (phase === "executing") return { label: "执行中", color: WARNING, bg: `${WARNING}16` };
+  if (phase === "awaiting_confirmation") return { label: "待确认", color: PRIMARY, bg: `${PRIMARY}16` };
+  return { label: "预览", color: TEXT_SECONDARY, bg: `${TEXT_SECONDARY}14` };
+}
+
+function maskMiddle(value: string, left = 6, right = 4) {
+  if (!value) return "--";
+  if (value.length <= left + right + 3) return value;
+  return `${value.slice(0, left)}...${value.slice(-right)}`;
+}
+
 function PerformanceBars({ items }: { items: Array<{ id: string; time: string; value: number }> }) {
   const maxAbs = Math.max(...items.map((item) => Math.abs(item.value)), 1);
 
   if (items.length === 0) {
     return (
       <View style={styles.emptyChart}>
-        <Text style={styles.emptyChartText}>当前按 MCP 原始账单数据展示，暂未返回可用于图形化的账单记录。</Text>
+        <Text style={styles.emptyChartText}>当前尚未返回可图形化的账单波动，后续会随着真实交易与收益沉淀逐步丰富。</Text>
       </View>
     );
   }
@@ -223,13 +244,15 @@ export default function CommunityRoute() {
   const [errorMessage, setErrorMessage] = useState("");
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [syncedPlan, setSyncedPlan] = useState<SyncedPlan>(null);
-  const [data, setData] = useState<StrategyDashboardState>({
+  const [searchText, setSearchText] = useState("");
+  const [data, setData] = useState<StrategyCenterState>({
     status: null,
     performance: null,
     positions: null,
     logs: null,
+    signals: null,
+    taskFeed: null,
   });
-  const [searchText, setSearchText] = useState("");
 
   const loadDashboard = useCallback(async (silent = false) => {
     try {
@@ -237,17 +260,39 @@ export default function CommunityRoute() {
         setLoading(true);
       }
       setErrorMessage("");
-      const [status, performance, positions, logs, plan] = await Promise.all([
+      const [status, performance, positions, logs, signals, taskFeed, plan] = await Promise.allSettled([
         getStrategyStatus(),
         getStrategyPerformance(),
         getStrategyPositions(),
         getStrategyLogs(),
+        getStrategySignals(),
+        getOnchainTaskFeed({ limit: "8" }),
         loadSyncedPlan(),
       ]);
-      setData({ status, performance, positions, logs });
-      setSyncedPlan(plan);
-      if (plan) {
-        setFlashMessage(`已同步赚币策略：${plan.strategyTitle}`);
+
+      const nextData: StrategyCenterState = {
+        status: status.status === "fulfilled" ? status.value : null,
+        performance: performance.status === "fulfilled" ? performance.value : null,
+        positions: positions.status === "fulfilled" ? positions.value : null,
+        logs: logs.status === "fulfilled" ? logs.value : null,
+        signals: signals.status === "fulfilled" ? signals.value : null,
+        taskFeed: taskFeed.status === "fulfilled" ? taskFeed.value : null,
+      };
+      setData(nextData);
+
+      const resolvedPlan = plan.status === "fulfilled" ? plan.value : null;
+      setSyncedPlan(resolvedPlan);
+      if (resolvedPlan) {
+        setFlashMessage(`已同步策略：${resolvedPlan.strategyTitle}`);
+      } else if ((nextData.taskFeed?.summary.total ?? 0) > 0) {
+        setFlashMessage(`最近 ${nextData.taskFeed?.summary.total ?? 0} 条自动执行记录已载入策略中心`);
+      } else {
+        setFlashMessage(null);
+      }
+
+      const failedBlocks = [status, performance, positions, logs, signals, taskFeed].filter((item) => item.status === "rejected").length;
+      if (failedBlocks > 0) {
+        setErrorMessage(`部分数据暂时不可用，已先展示可获取到的策略、信号与执行信息。`);
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "策略数据加载失败");
@@ -276,6 +321,10 @@ export default function CommunityRoute() {
   const performanceBars = useMemo(() => extractPerformanceBars(data.performance), [data.performance]);
   const recentTrades = useMemo(() => extractRecentTrades(data.logs), [data.logs]);
   const recentLogs = useMemo(() => extractRecentLogs(data.logs), [data.logs]);
+  const taskSummary = data.taskFeed?.summary;
+  const taskList = data.taskFeed?.tasks ?? [];
+  const marketPulse = data.signals?.marketPulse ?? [];
+  const smartSignals = data.signals?.smartMoneySignals ?? [];
 
   const gridSpotCount = getToolData(data.status?.gridSpotActive).length;
   const gridContractCount = getToolData(data.status?.gridContractActive).length;
@@ -292,7 +341,7 @@ export default function CommunityRoute() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={PRIMARY} />}
       >
         <View style={styles.fixedHeaderWrap}>
-          <Pressable style={styles.backRow} onPress={() => router.push("/(tabs)/chat")}>
+          <Pressable style={styles.backRow} onPress={() => router.push("/(tabs)/chat") }>
             <MaterialCommunityIcons name="arrow-left" size={20} color={TEXT_PRIMARY} />
             <Text style={styles.backText}>返回对话</Text>
           </Pressable>
@@ -304,14 +353,14 @@ export default function CommunityRoute() {
             <TextInput
               value={searchText}
               onChangeText={setSearchText}
-              placeholder="搜索代币、合约、地址"
+              placeholder="一句话描述策略、目标价或追踪地址"
               placeholderTextColor="#8B90A7"
               style={styles.searchInput}
               returnKeyType="search"
               onSubmitEditing={() => {
                 const keyword = searchText.trim();
                 if (!keyword) return;
-                router.push({ pathname: "/(tabs)/chat", params: { q: keyword, source: "community" } });
+                router.push({ pathname: "/(tabs)/chat", params: { q: keyword, source: "strategy-center" } });
               }}
             />
             {searchText ? (
@@ -320,18 +369,18 @@ export default function CommunityRoute() {
               </Pressable>
             ) : (
               <View style={styles.searchAction}>
-                <MaterialCommunityIcons name="line-scan" size={18} color={PRIMARY} />
+                <MaterialCommunityIcons name="robot-outline" size={18} color={PRIMARY} />
               </View>
             )}
           </View>
-          <Text style={styles.searchHint}>搜代币、合约、地址，社区页顶部统一入口已切换为搜索框。</Text>
+          <Text style={styles.searchHint}>这里是策略中心：你可以直接交代交易目标、收益诉求或信号条件，再回到对话执行。</Text>
         </View>
 
         <LinearGradient colors={["rgba(255,255,255,0.98)", "rgba(246,247,250,0.98)", "rgba(239,242,247,0.96)"]} style={styles.heroCard}>
           <View style={styles.heroHeader}>
             <View>
-              <Text style={styles.heroEyebrow}>社区对话入口</Text>
-              <Text style={styles.heroTitle}>在发现策略之前，先让 Agent 理解你的目标</Text>
+              <Text style={styles.heroEyebrow}>AI 策略中心</Text>
+              <Text style={styles.heroTitle}>让 Agent 发现机会、触发信号并自动推进交易流程</Text>
             </View>
             <View style={[styles.statusBadge, { backgroundColor: `${statusColor}18` }]}>
               <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -339,7 +388,7 @@ export default function CommunityRoute() {
             </View>
           </View>
           <Text style={styles.heroDesc}>
-            社区页不再只是检索入口，而是承接“发现机会、理解策略、进入对话执行”的前置场景，下方继续保留真实策略与交易数据卡片作为判断依据。
+            当前页面不再只是看板，而是统一承接三层信息：真实策略运行状态、市场/聪明钱信号、以及链上自动执行时间线。你后续看到的收益与任务回流，都会先汇总在这里。
           </Text>
           <View style={styles.metricRow}>
             <View style={styles.metricCard}>
@@ -347,12 +396,12 @@ export default function CommunityRoute() {
               <Text style={styles.metricLabel}>运行策略数</Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>${formatCurrency(balanceRoot.totalEq ?? 0)}</Text>
-              <Text style={styles.metricLabel}>账户总权益</Text>
+              <Text style={styles.metricValue}>{taskSummary?.runningCount ?? 0}</Text>
+              <Text style={styles.metricLabel}>自动执行中</Text>
             </View>
             <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{recentTrades.length}</Text>
-              <Text style={styles.metricLabel}>最近成交数</Text>
+              <Text style={styles.metricValue}>${formatCurrency(balanceRoot.totalEq ?? 0)}</Text>
+              <Text style={styles.metricLabel}>账户总权益</Text>
             </View>
           </View>
         </LinearGradient>
@@ -360,7 +409,7 @@ export default function CommunityRoute() {
         {loading ? (
           <View style={styles.loadingCard}>
             <ActivityIndicator size="large" color={PRIMARY} />
-            <Text style={styles.loadingText}>正在拉取 OKX Agent Trade Kit 数据…</Text>
+            <Text style={styles.loadingText}>正在同步策略状态、执行时间线与信号数据…</Text>
           </View>
         ) : null}
 
@@ -379,48 +428,114 @@ export default function CommunityRoute() {
         ) : null}
 
         {syncedPlan ? (
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>自动任务回执</Text>
-          </View>
-        ) : null}
-        {syncedPlan ? (
           <View style={styles.syncedPlanCard}>
             <Text style={styles.syncedPlanTitle}>{syncedPlan.strategyTitle}</Text>
-            <Text style={styles.syncedPlanMeta}>稳定币收益巡航 · 已同步到自动任务</Text>
+            <Text style={styles.syncedPlanMeta}>策略草案已同步进策略中心，后续将与自动执行时间线一起追踪。</Text>
           </View>
         ) : null}
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>策略运行概览</Text>
-          <Text style={styles.sectionMeta}>MCP 工具数 {toolCount}</Text>
+          <Text style={styles.sectionTitle}>自动策略总览</Text>
+          <Text style={styles.sectionMeta}>策略工具数 {toolCount}</Text>
         </View>
         <View style={styles.panelGrid}>
           <View style={styles.panelCard}>
             <Text style={styles.panelTitle}>运行状态</Text>
             <Text style={[styles.panelBigValue, { color: statusColor }]}>{getStatusLabel(activeCount)}</Text>
-            <Text style={styles.panelHint}>运行中策略数 {activeCount}</Text>
+            <Text style={styles.panelHint}>运行中策略 {activeCount}</Text>
           </View>
           <View style={styles.panelCard}>
-            <Text style={styles.panelTitle}>网格策略</Text>
-            <Text style={styles.panelBigValue}>{gridSpotCount + gridContractCount}</Text>
-            <Text style={styles.panelHint}>现货 {gridSpotCount} / 合约 {gridContractCount}</Text>
+            <Text style={styles.panelTitle}>网格 / 定投</Text>
+            <Text style={styles.panelBigValue}>{gridSpotCount + gridContractCount + dcaSpotCount + dcaContractCount}</Text>
+            <Text style={styles.panelHint}>网格 {gridSpotCount + gridContractCount} · 定投 {dcaSpotCount + dcaContractCount}</Text>
           </View>
           <View style={styles.panelCard}>
-            <Text style={styles.panelTitle}>定投策略</Text>
-            <Text style={styles.panelBigValue}>{dcaSpotCount + dcaContractCount}</Text>
-            <Text style={styles.panelHint}>现货 {dcaSpotCount} / 合约 {dcaContractCount}</Text>
+            <Text style={styles.panelTitle}>Onchain 任务</Text>
+            <Text style={styles.panelBigValue}>{taskSummary?.total ?? 0}</Text>
+            <Text style={styles.panelHint}>成功 {taskSummary?.successCount ?? 0} · 失败 {taskSummary?.failedCount ?? 0}</Text>
           </View>
         </View>
 
         <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>AI 信号追踪</Text>
+          <Text style={styles.sectionMeta}>Market + Smart Money</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>市场脉搏</Text>
+          <View style={styles.signalPulseRow}>
+            {marketPulse.map((item) => (
+              <View key={item.symbol} style={styles.signalPulseCard}>
+                <Text style={styles.signalPulseSymbol}>{item.symbol}</Text>
+                <Text style={styles.signalPulsePrice}>{item.price ? `$${item.price}` : "--"}</Text>
+                <Text style={styles.signalPulseMeta}>{item.error ? "价格暂不可用" : `更新 ${formatCompactTime(item.timestamp)}`}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={styles.signalDivider} />
+          <Text style={styles.cardTitle}>聪明钱异动</Text>
+          {smartSignals.map((item) => {
+            const positive = item.side.toLowerCase().includes("buy");
+            return (
+              <View key={item.id} style={styles.signalRow}>
+                <View style={[styles.signalBadge, { backgroundColor: positive ? `${SUCCESS}16` : `${WARNING}16` }]}>
+                  <Text style={[styles.signalBadgeText, { color: positive ? SUCCESS : WARNING }]}>{positive ? "买入" : item.side || "信号"}</Text>
+                </View>
+                <View style={styles.signalMain}>
+                  <Text style={styles.signalTitle}>{item.tokenSymbol}</Text>
+                  <Text style={styles.signalMeta}>地址 {maskMiddle(item.walletAddress)} · {formatCompactTime(item.timestamp)}</Text>
+                </View>
+                <Text style={styles.signalValue}>{item.amountUsd ? `$${item.amountUsd}` : "--"}</Text>
+              </View>
+            );
+          })}
+          {smartSignals.length === 0 ? <Text style={styles.emptyText}>当前没有返回可展示的聪明钱异动，信号模块会继续沿用真实 OKX 数据刷新。</Text> : null}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>自动执行时间线</Text>
+          <Text style={styles.sectionMeta}>Onchain Task Feed</Text>
+        </View>
+        <View style={styles.card}>
+          <Text style={styles.cardSubtitle}>这里会回流一句话交易生成的链上任务，展示其预览、执行、回执与失败日志。</Text>
+          {taskList.map((task) => {
+            const tone = getPhaseTone(task.phase);
+            return (
+              <View key={task.txId} style={styles.taskCard}>
+                <View style={styles.taskHeader}>
+                  <View>
+                    <Text style={styles.taskTitle}>{task.fromToken ?? "FROM"} → {task.toToken ?? "TO"}</Text>
+                    <Text style={styles.taskMeta}>{task.amount} · 链 {task.chainIndex} · {formatCompactTime(task.updatedAt)}</Text>
+                  </View>
+                  <View style={[styles.taskPhaseBadge, { backgroundColor: tone.bg }]}>
+                    <Text style={[styles.taskPhaseText, { color: tone.color }]}>{tone.label}</Text>
+                  </View>
+                </View>
+                <Text style={styles.taskSubMeta}>钱包 {maskMiddle(task.userWalletAddress)} · 任务 {maskMiddle(task.txId, 8, 6)}</Text>
+                {task.logs.slice(0, 4).map((log) => (
+                  <View key={log.id} style={styles.taskLogRow}>
+                    <View style={[styles.taskLogDot, { backgroundColor: log.level === "error" ? DANGER : log.level === "warn" ? WARNING : PRIMARY }]} />
+                    <View style={styles.taskLogContent}>
+                      <Text style={styles.taskLogTitle}>{log.message}</Text>
+                      <Text style={styles.taskLogMeta}>{log.eventType} · {formatCompactTime(log.createdAt)}</Text>
+                    </View>
+                  </View>
+                ))}
+                {task.lastError ? <Text style={styles.taskError}>最近错误：{task.lastError}</Text> : null}
+              </View>
+            );
+          })}
+          {taskList.length === 0 ? <Text style={styles.emptyText}>当前还没有链上自动执行任务。完成一句话交易后，这里会出现完整动态流程。</Text> : null}
+        </View>
+
+        <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>收益判断依据</Text>
-          <Text style={styles.sectionMeta}>直接来自 balance / bills 原始结果</Text>
+          <Text style={styles.sectionMeta}>Balance / Bills</Text>
         </View>
         <View style={styles.card}>
           <View style={styles.performanceHeader}>
             <View>
               <Text style={styles.cardTitle}>账户收益概览</Text>
-              <Text style={styles.cardSubtitle}>前端从 MCP 原始返回中读取 totalEq、availEq、upl 与账单数组。</Text>
+              <Text style={styles.cardSubtitle}>总权益、可用权益与未实现盈亏直接来自 OKX 能力层原始返回。</Text>
             </View>
             <MaterialCommunityIcons name="chart-line" size={22} color={PRIMARY} />
           </View>
@@ -445,7 +560,7 @@ export default function CommunityRoute() {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>仓位与资产判断</Text>
-          <Text style={styles.sectionMeta}>优先展示 balance.details，其次展示 positions.data</Text>
+          <Text style={styles.sectionMeta}>Balance / Positions</Text>
         </View>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>账户资产分布</Text>
@@ -472,8 +587,8 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>近期交易线索</Text>
-          <Text style={styles.sectionMeta}>直接来自 fills 原始结果</Text>
+          <Text style={styles.sectionTitle}>近期真实成交</Text>
+          <Text style={styles.sectionMeta}>Fills</Text>
         </View>
         <View style={styles.card}>
           {recentTrades.map((item, index) => {
@@ -499,11 +614,10 @@ export default function CommunityRoute() {
         </View>
 
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>策略执行线索</Text>
-          <Text style={styles.sectionMeta}>优先展示 tradeHistory，否则展示 orders 原始结果</Text>
+          <Text style={styles.sectionTitle}>策略执行日志</Text>
+          <Text style={styles.sectionMeta}>Trade History / Orders</Text>
         </View>
         <View style={styles.card}>
-          <Text style={styles.cardSubtitle}>该区块直接消费 MCP 原始 JSON，仅做展示格式化。</Text>
           {recentLogs.map((item, index) => (
             <View key={String(item.id ?? item.ordId ?? item.billId ?? index)} style={styles.logRow}>
               <View style={styles.logBullet} />
@@ -516,18 +630,6 @@ export default function CommunityRoute() {
             </View>
           ))}
           {recentLogs.length === 0 ? <Text style={styles.emptyText}>当前没有可展示的策略日志。</Text> : null}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>交易排名参考</Text>
-          <Text style={styles.sectionMeta}>当前后端未加工该字段</Text>
-        </View>
-        <View style={styles.card}>
-          <View style={styles.rankingHeader}>
-            <MaterialCommunityIcons name="trophy-outline" size={22} color="#6B7280" />
-            <Text style={styles.cardTitle}>OKX 交易赛排名</Text>
-          </View>
-          <Text style={styles.emptyText}>当前 strategy 接口仅纯透传已接入的 MCP 工具结果，未包含官方排名数据。</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -681,7 +783,7 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   loadingCard: {
-    backgroundColor: "rgba(255,255,255,0.92)",
+    backgroundColor: CARD_BG,
     borderRadius: 18,
     padding: 20,
     alignItems: "center",
@@ -711,6 +813,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  flashCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  flashText: {
+    flex: 1,
+    color: SUCCESS,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  syncedPlanCard: {
+    backgroundColor: PRIMARY_LIGHT,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    gap: 6,
+  },
+  syncedPlanTitle: {
+    fontSize: 16,
+    color: TEXT_PRIMARY,
+    fontWeight: "800",
+  },
+  syncedPlanMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -732,7 +869,7 @@ const styles = StyleSheet.create({
   },
   panelCard: {
     flex: 1,
-    backgroundColor: "rgba(255,255,255,0.92)",
+    backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: "rgba(15,23,42,0.06)",
     borderRadius: 18,
@@ -755,32 +892,167 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   card: {
-    backgroundColor: "rgba(255,255,255,0.92)",
+    backgroundColor: CARD_BG,
     borderWidth: 1,
     borderColor: "rgba(15,23,42,0.06)",
     borderRadius: 20,
     padding: 16,
-    gap: 14,
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 16,
-    elevation: 2,
+    gap: 12,
   },
   cardTitle: {
     fontSize: 16,
-    color: TEXT_PRIMARY,
     fontWeight: "800",
+    color: TEXT_PRIMARY,
   },
   cardSubtitle: {
     fontSize: 12,
-    color: TEXT_SECONDARY,
     lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
+  signalPulseRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  signalPulseCard: {
+    flex: 1,
+    backgroundColor: "rgba(124,58,237,0.06)",
+    borderRadius: 16,
+    padding: 12,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "rgba(124,58,237,0.08)",
+  },
+  signalPulseSymbol: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: TEXT_SECONDARY,
+  },
+  signalPulsePrice: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: TEXT_PRIMARY,
+  },
+  signalPulseMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
+  signalDivider: {
+    height: 1,
+    backgroundColor: "rgba(15,23,42,0.06)",
+    marginVertical: 2,
+  },
+  signalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 6,
+  },
+  signalBadge: {
+    minWidth: 56,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: "center",
+  },
+  signalBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  signalMain: {
+    flex: 1,
+    gap: 3,
+  },
+  signalTitle: {
+    fontSize: 14,
+    color: TEXT_PRIMARY,
+    fontWeight: "700",
+  },
+  signalMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
+  signalValue: {
+    fontSize: 13,
+    color: TEXT_PRIMARY,
+    fontWeight: "700",
+  },
+  taskCard: {
+    borderRadius: 18,
+    padding: 14,
+    gap: 10,
+    backgroundColor: "rgba(124,58,237,0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(124,58,237,0.08)",
+  },
+  taskHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  taskTitle: {
+    fontSize: 15,
+    color: TEXT_PRIMARY,
+    fontWeight: "800",
+  },
+  taskMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+    marginTop: 2,
+  },
+  taskSubMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
+  taskPhaseBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignSelf: "flex-start",
+  },
+  taskPhaseText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  taskLogRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "flex-start",
+  },
+  taskLogDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+    marginTop: 6,
+  },
+  taskLogContent: {
+    flex: 1,
+    gap: 2,
+  },
+  taskLogTitle: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: TEXT_PRIMARY,
+    fontWeight: "600",
+  },
+  taskLogMeta: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
+  },
+  taskError: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: DANGER,
   },
   performanceHeader: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
   },
   performanceMetricsRow: {
     flexDirection: "row",
@@ -788,7 +1060,7 @@ const styles = StyleSheet.create({
   },
   performanceMetricItem: {
     flex: 1,
-    backgroundColor: PRIMARY_LIGHT,
+    backgroundColor: "rgba(15,23,42,0.03)",
     borderRadius: 16,
     padding: 12,
     gap: 6,
@@ -803,27 +1075,18 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   chartWrapper: {
-    borderRadius: 18,
-    backgroundColor: "#FBFAFF",
-    paddingHorizontal: 12,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: "#EEE7FF",
+    marginTop: 4,
     gap: 10,
   },
   chartBaseline: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    top: 78,
     height: 1,
-    backgroundColor: "#E5E7EB",
+    backgroundColor: "rgba(15,23,42,0.08)",
   },
   chartBarsRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    justifyContent: "space-between",
-    height: 130,
+    gap: 6,
+    minHeight: 128,
   },
   chartBarSlot: {
     flex: 1,
@@ -831,7 +1094,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   chartBar: {
-    width: 10,
+    width: "100%",
     borderRadius: 999,
   },
   chartLabelsRow: {
@@ -843,77 +1106,76 @@ const styles = StyleSheet.create({
     color: TEXT_SECONDARY,
   },
   emptyChart: {
-    backgroundColor: "#FBFAFF",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#EEE7FF",
-    padding: 18,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(15,23,42,0.03)",
   },
   emptyChartText: {
-    color: TEXT_SECONDARY,
     fontSize: 12,
     lineHeight: 18,
+    color: TEXT_SECONDARY,
   },
   listRow: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     gap: 12,
+    paddingVertical: 8,
   },
   listLeft: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    flex: 1,
+    gap: 12,
   },
   listRight: {
     alignItems: "flex-end",
-    gap: 4,
+    gap: 2,
   },
   assetIconWrap: {
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: "rgba(15,23,42,0.05)",
+    backgroundColor: "rgba(124,58,237,0.10)",
     alignItems: "center",
     justifyContent: "center",
   },
   assetIconText: {
-    color: "#334155",
     fontSize: 12,
     fontWeight: "800",
+    color: PRIMARY,
   },
   listTitle: {
-    color: TEXT_PRIMARY,
     fontSize: 14,
+    color: TEXT_PRIMARY,
     fontWeight: "700",
   },
   listSubtitle: {
-    color: TEXT_SECONDARY,
     fontSize: 12,
-    marginTop: 2,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
   },
   listValue: {
-    color: TEXT_PRIMARY,
     fontSize: 14,
+    color: TEXT_PRIMARY,
     fontWeight: "700",
   },
   listSecondary: {
-    color: TEXT_SECONDARY,
     fontSize: 12,
+    color: TEXT_SECONDARY,
   },
   tradeRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
+    paddingVertical: 6,
   },
   tradeBadge: {
     minWidth: 52,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-    paddingVertical: 8,
     paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: "center",
   },
   tradeBadgeText: {
     fontSize: 12,
@@ -921,25 +1183,26 @@ const styles = StyleSheet.create({
   },
   tradeMain: {
     flex: 1,
-    gap: 4,
-  },
-  tradeRight: {
-    alignItems: "flex-end",
-    gap: 4,
+    gap: 3,
   },
   tradeTitle: {
     fontSize: 14,
-    color: TEXT_PRIMARY,
     fontWeight: "700",
+    color: TEXT_PRIMARY,
   },
-  tradeSubtitle: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
+  tradeRight: {
+    alignItems: "flex-end",
+    gap: 3,
   },
   tradeValue: {
     fontSize: 14,
-    color: TEXT_PRIMARY,
     fontWeight: "700",
+    color: TEXT_PRIMARY,
+  },
+  tradeSubtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: TEXT_SECONDARY,
   },
   logRow: {
     flexDirection: "row",
@@ -947,64 +1210,29 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   logBullet: {
-    width: 10,
-    height: 10,
+    width: 8,
+    height: 8,
     borderRadius: 999,
-    backgroundColor: "rgba(15,23,42,0.22)",
-    marginTop: 5,
+    marginTop: 6,
+    backgroundColor: PRIMARY,
   },
   logContent: {
     flex: 1,
     gap: 4,
   },
   logTitle: {
+    fontSize: 13,
     color: TEXT_PRIMARY,
-    fontSize: 14,
     fontWeight: "700",
   },
   logText: {
-    color: TEXT_SECONDARY,
     fontSize: 12,
     lineHeight: 18,
-  },
-  rankingHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    color: TEXT_SECONDARY,
   },
   emptyText: {
-    color: TEXT_SECONDARY,
     fontSize: 12,
     lineHeight: 18,
-  },
-  flashCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F0FFF4",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 8,
-  },
-  flashText: {
-    color: SUCCESS,
-    fontSize: 13,
-    flex: 1,
-  },
-  syncedPlanCard: {
-    backgroundColor: "#F7F3FF",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-  },
-  syncedPlanTitle: {
-    color: TEXT_PRIMARY,
-    fontSize: 15,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  syncedPlanMeta: {
     color: TEXT_SECONDARY,
-    fontSize: 12,
   },
 });

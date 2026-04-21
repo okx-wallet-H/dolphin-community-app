@@ -945,7 +945,7 @@ async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot
       {
         role: 'system',
         content:
-          '你是海豚社区的 AI 驱动钱包助手。你需要识别用户消息属于 market、asset、swap、earn、profit、deposit、general 哪一种意图，并只返回 JSON。JSON 字段必须包含 action, confidence, reply, priceSymbol, priceText, assetSummary, swapMessage。若是查行情，只需识别 symbol 并给出简短自然语言答复草稿，最终实时价格会由系统补齐；若是查资产，reply 与 assetSummary 给出资产总结；若是 swap，reply 简短说明将进入兑换流程，swapMessage 返回原始兑换描述；若是 earn、profit、deposit，只需给出简短草稿回复，具体卡片数据由系统补齐；若是 general，reply 给出友好回答。不要返回 Markdown。',
+          '你是 H Wallet 的 AI 驱动钱包助手。你需要识别用户消息属于 market、asset、swap、earn、profit、deposit、general 哪一种意图，并只返回 JSON。JSON 字段必须包含 action, confidence, reply, priceSymbol, priceText, assetSummary, swapMessage。若是查行情，只需识别 symbol 并给出简短自然语言答复草稿，最终实时价格会由系统补齐；若是查资产，reply 与 assetSummary 给出资产总结；若是 swap，reply 简短说明将进入兑换流程，swapMessage 返回原始兑换描述；若是 earn、profit、deposit，只需给出简短草稿回复，具体卡片数据由系统补齐；若是 general，reply 给出友好回答。不要返回 Markdown。',
       },
       {
         role: 'user',
@@ -1073,6 +1073,24 @@ export async function getChatAiIntent(message: string, wallet?: WalletSnapshot |
   const normalized = message.trim();
   if (!normalized) {
     throw new Error('message is required');
+  }
+
+  const fastIntent = await buildFallbackIntent(normalized, wallet);
+  if (fastIntent.action !== 'general') {
+    if (fastIntent.action === 'earn') {
+      return buildEarnIntentResult(normalized, wallet);
+    }
+
+    if (fastIntent.action === 'profit') {
+      return buildProfitIntentResult(wallet);
+    }
+
+    if (fastIntent.action === 'deposit') {
+      const depositResult = buildDepositIntentResult(wallet);
+      return buildChatResult(depositResult.intent, { deposit: depositResult.deposit });
+    }
+
+    return buildChatResult(fastIntent);
   }
 
   try {

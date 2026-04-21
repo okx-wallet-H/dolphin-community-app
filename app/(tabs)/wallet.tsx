@@ -2,6 +2,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
@@ -109,30 +110,6 @@ function StatMini({ icon, iconColor, label, value, sub }: { icon: string; iconCo
   );
 }
 
-/* ── Agent Task Card ────────────────────────────── */
-function TaskCard({ token, tokenColor, title, desc, status, statusBg, statusFg, icon }: {
-  token: string; tokenColor: string; title: string; desc: string;
-  status: string; statusBg: string; statusFg: string; icon: string;
-}) {
-  return (
-    <View style={s.taskCard}>
-      <View style={s.taskTop}>
-        <Text style={[s.taskToken, { color: tokenColor }]}>{token}</Text>
-        <MaterialCommunityIcons name="dots-vertical" size={16} color={T.textMuted} />
-      </View>
-      <Text style={s.taskTitle} numberOfLines={2}>{title}</Text>
-      <Text style={s.taskDesc}>{desc}</Text>
-      <View style={s.taskBot}>
-        <View style={[s.badge, { backgroundColor: statusBg }]}>
-          <Text style={[s.badgeText, { color: statusFg }]}>{status}</Text>
-        </View>
-        <View style={[s.taskIconCircle, { backgroundColor: `${tokenColor}12` }]}>
-          <MaterialCommunityIcons name={icon as any} size={16} color={tokenColor} />
-        </View>
-      </View>
-    </View>
-  );
-}
 
 /* ── Token Row ──────────────────────────────────── */
 function TokenRow({ a, last }: { a: WalletAssetItem; last: boolean }) {
@@ -170,6 +147,7 @@ export default function WalletScreen() {
   const [assets, setAssets] = useState<AgentWalletAssetsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string>("");
   const scrollRef = useRef<ScrollView>(null);
 
   const totalUsd = useMemo(() => toNum(assets?.totalAssetValue), [assets?.totalAssetValue]);
@@ -266,6 +244,14 @@ export default function WalletScreen() {
   const scrollToDeposit = useCallback(() => {
     scrollRef.current?.scrollTo({ y: 320, animated: true });
   }, []);
+  const handleCopyAddress = useCallback(async (key: string, address: string) => {
+    if (!address) return;
+    await Clipboard.setStringAsync(address);
+    setCopiedKey(key);
+    setTimeout(() => {
+      setCopiedKey((current) => (current === key ? "" : current));
+    }, 1800);
+  }, []);
 
   return (
     <View style={s.root}>
@@ -337,14 +323,21 @@ export default function WalletScreen() {
           <View style={s.addressList}>
             {depositAddresses.length ? (
               depositAddresses.map((item) => (
-                <View key={item.key} style={s.addressCard}>
+                <Pressable key={item.key} style={s.addressCard} onPress={() => handleCopyAddress(item.key, item.address)}>
                   <View style={s.addressCardHead}>
                     <Text style={s.addressChain}>{item.chainName}</Text>
                     <Text style={s.addressLabel}>{item.networkLabel}</Text>
                   </View>
                   <Text style={s.addressValue}>{shortAddress(item.address)}</Text>
                   <Text style={s.addressHint}>完整地址：{item.address}</Text>
-                </View>
+                  <View style={s.addressCopyRow}>
+                    <Text style={s.addressCopyHint}>{copiedKey === item.key ? "地址已复制" : "点击卡片即可复制地址"}</Text>
+                    <View style={s.addressCopyChip}>
+                      <Ionicons name={copiedKey === item.key ? "checkmark" : "copy-outline"} size={14} color={T.primary} />
+                      <Text style={s.addressCopyText}>{copiedKey === item.key ? "已复制" : "复制"}</Text>
+                    </View>
+                  </View>
+                </Pressable>
               ))
             ) : (
               <View style={s.addressCard}>
@@ -438,23 +431,15 @@ const s = StyleSheet.create({
   /* Section Title */
   secTitle: { fontSize: 18, fontWeight: "700", color: T.text, marginTop: 24, marginBottom: 12, letterSpacing: -0.3 },
 
-  /* Tasks */
-  tasksScroll: { gap: 10, paddingRight: 20 },
-  taskCard: { width: 150, backgroundColor: T.cardSolid, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: T.glassBorder, shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12 },
-  taskTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  taskToken: { fontSize: 15, fontWeight: "800" },
-  taskTitle: { fontSize: 13, fontWeight: "600", color: T.text, marginTop: 8, lineHeight: 18 },
-  taskDesc: { fontSize: 11, color: T.textSec, marginTop: 2 },
-  taskBot: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  badgeText: { fontSize: 10, fontWeight: "700" },
-  taskIconCircle: { width: 28, height: 28, borderRadius: 9, alignItems: "center", justifyContent: "center" },
-
   /* Token List */
   tokenCard: { backgroundColor: T.cardSolid, borderRadius: 22, borderWidth: 1, borderColor: T.glassBorder, overflow: "hidden", shadowColor: "#7C3AED", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 14 },
   emptyState: { paddingHorizontal: 20, paddingVertical: 28, alignItems: "center" },
   emptyStateTitle: { fontSize: 16, fontWeight: "800", color: T.text },
   emptyStateText: { marginTop: 8, fontSize: 13, lineHeight: 20, color: T.textSec, textAlign: "center" },
+  addressCopyRow: { marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  addressCopyHint: { flex: 1, fontSize: 12, color: T.textMuted },
+  addressCopyChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(124,58,237,0.08)" },
+  addressCopyText: { fontSize: 12, fontWeight: "700", color: T.primary },
   tokenRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 16 },
   tokenBorder: { borderBottomWidth: 1, borderBottomColor: T.borderLight },
   tokenCircle: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },

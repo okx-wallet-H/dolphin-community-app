@@ -22,9 +22,9 @@ const SETTING_ITEMS = [
 ] as const;
 
 const STATS = [
-  { key: 'days', value: '187', label: '交易日', accent: TEXT_PRIMARY },
-  { key: 'yield', value: '+26.8%', label: '总回报率', accent: PRIMARY },
-  { key: 'strategies', value: '12', label: '策略数量', accent: TEXT_PRIMARY },
+  { key: 'session', value: '已连接', label: '会话状态', accent: PRIMARY },
+  { key: 'wallet', value: '双链路', label: '钱包地址簇', accent: TEXT_PRIMARY },
+  { key: 'strategy', value: '已启用', label: '策略中心', accent: TEXT_PRIMARY },
 ] as const;
 
 function BottomNavBar() {
@@ -87,10 +87,10 @@ export default function SettingsRoute() {
         <View style={styles.profileSection}>
           <LinearGradient colors={['#B58CFF', '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.avatarOuter}>
             <View style={styles.avatarInner}>
-              <Text style={styles.avatarLetter}>海</Text>
+              <Text style={styles.avatarLetter}>H</Text>
             </View>
           </LinearGradient>
-          <Text style={styles.profileName}>海豚社区账号</Text>
+          <Text style={styles.profileName}>H Wallet 账号</Text>
           <Text style={styles.profileEmail}>当前登录邮箱将在会话恢复后展示</Text>
           <LinearGradient colors={['#EBD18A', '#C19A45', '#EFD9A5']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.memberBadge}>
             <Text style={styles.memberBadgeText}>已启用安全会话</Text>
