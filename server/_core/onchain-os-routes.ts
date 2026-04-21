@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import {
   executeOnchainSwap,
+  executeOnchainTransfer,
   getOnchainApprovals,
   getOnchainAssets,
   getOnchainExecutionReceipt,
@@ -48,6 +49,48 @@ async function requireAuth(req: Request, res: Response) {
     res.status(401).json({ error: "Not authenticated" });
     return null;
   }
+}
+
+type OnchainFailureCategory =
+  | "user_cancelled"
+  | "quote_expired"
+  | "insufficient_balance"
+  | "gas_failure"
+  | "slippage_exceeded"
+  | "network_timeout"
+  | "chain_rejected"
+  | "unknown";
+
+/**
+ * 将已知错误消息映射为可读原因并分类，用于区分可重试与不可重试失败。
+ */
+function classifyOnchainError(error: unknown): {
+  category: OnchainFailureCategory;
+  userMessage: string;
+} {
+  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  if (msg.includes("cancel") || msg.includes("取消") || msg.includes("user denied")) {
+    return { category: "user_cancelled", userMessage: "用户取消了交易" };
+  }
+  if (msg.includes("quote") && (msg.includes("expir") || msg.includes("stale") || msg.includes("过期"))) {
+    return { category: "quote_expired", userMessage: "报价已过期，请重新获取" };
+  }
+  if (msg.includes("insufficient") || msg.includes("余额不足") || msg.includes("balance")) {
+    return { category: "insufficient_balance", userMessage: "余额不足，无法完成交易" };
+  }
+  if (msg.includes("gas") || msg.includes("fee")) {
+    return { category: "gas_failure", userMessage: "Gas 费用不足或 Gas 估算失败" };
+  }
+  if (msg.includes("slippage") || msg.includes("滑点")) {
+    return { category: "slippage_exceeded", userMessage: "滑点超出限制，请调低滑点或重新报价" };
+  }
+  if (msg.includes("timeout") || msg.includes("network") || msg.includes("超时")) {
+    return { category: "network_timeout", userMessage: "网络超时，请稍后重试" };
+  }
+  if (msg.includes("revert") || msg.includes("execution reverted")) {
+    return { category: "chain_rejected", userMessage: "链上合约执行失败（revert）" };
+  }
+  return { category: "unknown", userMessage: error instanceof Error ? error.message : "交易执行失败，请重试" };
 }
 
 export function registerOnchainOsRoutes(app: Express) {
@@ -388,15 +431,16 @@ export function registerOnchainOsRoutes(app: Express) {
         ...result,
       });
     } catch (error) {
+      const { category, userMessage } = classifyOnchainError(error);
       await updateOnchainTx(txRecord.txId, (current) => ({
         ...current,
         phase: "failed",
-        lastError: error instanceof Error ? error.message : "Failed to execute swap with Onchain OS",
+        lastError: JSON.stringify({ category, userMessage, raw: error instanceof Error ? error.message : String(error) }),
         lastResponse: {
           executionModel: "agent_wallet",
           phase: "failed",
           progress: [],
-          error: error instanceof Error ? error.message : "Failed to execute swap with Onchain OS",
+          error: userMessage,
         },
       }));
 
@@ -408,12 +452,13 @@ export function registerOnchainOsRoutes(app: Express) {
         message: "Onchain swap execution failed",
         context: {
           error: error instanceof Error ? error.message : String(error),
+          failureCategory: category,
         },
       });
 
       console.error("[Onchain OS] execute failed", error);
       res.status(400).json({
-        error: error instanceof Error ? error.message : "Failed to execute swap with Onchain OS",
+        error: userMessage,
       });
     }
   });
@@ -481,6 +526,149 @@ export function registerOnchainOsRoutes(app: Express) {
       res.status(400).json({
         error: error instanceof Error ? error.message : "Failed to query Onchain OS receipt",
       });
+    }
+  });
+
+  app.post("/api/onchain/transfer", async (req: Request, res: Response) => {
+    const user = await requireAuth(req, res);
+    if (!user) return;
+
+    const fromAddress = getBodyString(req.body, "fromAddress");
+    const toAddress = getBodyString(req.body, "toAddress");
+    const amount = getBodyString(req.body, "amount");
+    const symbol = getBodyString(req.body, "symbol");
+    const chainIndex = getBodyString(req.body, "chainIndex");
+
+    if (!fromAddress || !toAddress || !amount || !symbol || !chainIndex) {
+      res.status(400).json({
+        error: "fromAddress, toAddress, amount, symbol and chainIndex are required",
+      });
+      return;
+    }
+
+    const displayAmount = getOptionalBodyString(req.body, "displayAmount");
+    const slippagePercent = getOptionalBodyString(req.body, "slippagePercent");
+    const riskError = validateOnchainExecutionRisk({
+      chainIndex,
+      displayAmount: displayAmount ?? amount,
+      slippagePercent,
+    });
+    if (riskError) {
+      res.status(400).json({ code: riskError.code, error: riskError.message });
+      return;
+    }
+
+    const idempotencyKey = buildOnchainIdempotencyKey({
+      userId: user.openId,
+      chainIndex,
+      amount,
+      fromToken: `${symbol}:${fromAddress}`,
+      toToken: toAddress,
+    });
+    const existingTx = await findOnchainTxByIdempotencyKey(idempotencyKey);
+    if (existingTx && shouldBlockDuplicateExecution(existingTx.phase)) {
+      await appendOnchainTxLog({
+        txId: existingTx.txId,
+        userId: user.openId,
+        eventType: "duplicate",
+        level: "warn",
+        message: "Duplicate Onchain transfer request blocked by idempotency guard",
+        context: { idempotencyKey, phase: existingTx.phase },
+      });
+      res.json({
+        user: { openId: user.openId },
+        txId: existingTx.txId,
+        idempotent: true,
+        ...(existingTx.lastResponse ?? {
+          executionModel: "agent_wallet",
+          phase: existingTx.phase,
+          orderId: existingTx.orderId,
+          txHash: existingTx.txHash,
+          progress: [],
+        }),
+      });
+      return;
+    }
+
+    const txRecord = await createOnchainTxRecord({
+      userId: user.openId,
+      type: "transfer",
+      phase: "preview",
+      chainIndex,
+      userWalletAddress: fromAddress,
+      fromToken: symbol,
+      toToken: toAddress,
+      amount,
+      idempotencyKey,
+      retryCount: 0,
+    });
+
+    await appendOnchainTxLog({
+      txId: txRecord.txId,
+      userId: user.openId,
+      eventType: "create",
+      level: "info",
+      message: "Onchain transfer task created",
+      context: { chainIndex, fromAddress, toAddress, amount, symbol },
+    });
+
+    try {
+      const result = await executeOnchainTransfer({
+        chainIndex,
+        amount,
+        symbol,
+        fromAddress,
+        toAddress,
+        signedTx: getOptionalBodyString(req.body, "signedTx"),
+      });
+
+      await updateOnchainTx(txRecord.txId, (current) => ({
+        ...current,
+        phase: result.phase,
+        orderId: result.orderId ?? current.orderId,
+        txHash: result.txHash ?? current.txHash,
+        lastResponse: result as Record<string, unknown>,
+      }));
+
+      await appendOnchainTxLog({
+        txId: txRecord.txId,
+        userId: user.openId,
+        eventType: "execute",
+        level: result.phase === "failed" ? "error" : "info",
+        message: `Onchain transfer execution moved to ${result.phase}`,
+        context: { orderId: result.orderId, txHash: result.txHash, phase: result.phase },
+      });
+
+      res.json({
+        user: { openId: user.openId },
+        txId: txRecord.txId,
+        ...result,
+      });
+    } catch (error) {
+      const { category, userMessage } = classifyOnchainError(error);
+      await updateOnchainTx(txRecord.txId, (current) => ({
+        ...current,
+        phase: "failed",
+        lastError: JSON.stringify({ category, userMessage, raw: error instanceof Error ? error.message : String(error) }),
+        lastResponse: {
+          executionModel: "agent_wallet",
+          phase: "failed",
+          progress: [],
+          error: userMessage,
+        },
+      }));
+
+      await appendOnchainTxLog({
+        txId: txRecord.txId,
+        userId: user.openId,
+        eventType: "failure",
+        level: "error",
+        message: "Onchain transfer execution failed",
+        context: { error: error instanceof Error ? error.message : String(error), failureCategory: category },
+      });
+
+      console.error("[Onchain OS] transfer failed", error);
+      res.status(400).json({ error: userMessage });
     }
   });
 }

@@ -218,3 +218,43 @@ export async function getOnchainTxLogs(txId?: string) {
   const state = await readState();
   return state.logs.filter((item) => !txId || item.txId === txId);
 }
+
+/**
+ * 对指定 txId 的任务递增 retryCount，并可选地更新 lastError。
+ * 达到上限（默认 5 次）后自动将 phase 标记为 failed。
+ */
+export async function incrementOnchainTxRetry(
+  txId: string,
+  lastError?: string,
+  maxRetries = 5,
+): Promise<OnchainTxRecord | undefined> {
+  return updateOnchainTx(txId, (current) => {
+    const nextRetryCount = (current.retryCount ?? 0) + 1;
+    const phase: OnchainExecutionPhase =
+      nextRetryCount >= maxRetries ? "failed" : current.phase;
+    return {
+      ...current,
+      phase,
+      retryCount: nextRetryCount,
+      lastError: lastError ?? current.lastError,
+    };
+  });
+}
+
+/**
+ * 扫描所有处于 executing 状态且超过 staleMs 未更新的任务，返回需要恢复的列表。
+ * 调用方负责对每条记录调用 getOnchainExecutionReceipt 并更新状态。
+ */
+export async function listStaleExecutingTxs(
+  userId?: string,
+  staleMs = 5 * 60 * 1000,
+): Promise<OnchainTxRecord[]> {
+  const now = Date.now();
+  const records = await listOnchainTxs(userId);
+  return records.filter(
+    (item) =>
+      item.phase === "executing" &&
+      item.updatedAt > 0 &&
+      now - item.updatedAt > staleMs,
+  );
+}

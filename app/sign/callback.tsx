@@ -7,6 +7,7 @@ import {
   parseSignatureCallbackUrl,
   type SignatureCallbackStatus,
 } from "@/lib/signature-bridge";
+import { executeOnchainSwap } from "@/lib/_core/api";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -170,20 +171,69 @@ export default function SignCallbackScreen() {
           return;
         }
 
-        const draft = buildChatDraft({
-          flow: pending.flow,
-          status: payload.status,
-          hasSignedTx: Boolean(payload.signedTx || payload.jitoSignedTx),
-          txHash: payload.txHash,
-          error: payload.error,
-        });
-
-        const draftKey = `signature:${pending.id}:${payload.status || "returned"}`;
         const shouldClearPendingContext =
           payload.status === "cancelled" || payload.status === "error" || Boolean(payload.error);
         if (shouldClearPendingContext) {
           await clearPendingSignatureContext();
         }
+
+        // 当有签名结果时，直接调用后端广播，不依赖 AI 中转
+        const hasSignedTx = Boolean(payload.signedTx || payload.jitoSignedTx);
+        if (hasSignedTx && pending.swap) {
+          setMessage("签名结果已接收，正在直接广播交易...");
+          try {
+            const broadcastResult = await executeOnchainSwap({
+              chainIndex: pending.swap.chainIndex,
+              amount: pending.swap.amount,
+              fromTokenAddress: pending.swap.fromTokenAddress,
+              toTokenAddress: pending.swap.toTokenAddress,
+              userWalletAddress: pending.swap.userWalletAddress,
+              fromTokenSymbol: pending.swap.fromTokenSymbol,
+              toTokenSymbol: pending.swap.toTokenSymbol,
+              displayAmount: pending.swap.displayAmount,
+              slippagePercent: pending.swap.slippagePercent,
+              broadcastAddress: pending.swap.broadcastAddress,
+              signedTx: payload.signedTx ?? undefined,
+              jitoSignedTx: payload.jitoSignedTx ?? undefined,
+            });
+
+            // 广播成功后清理上下文
+            await clearPendingSignatureContext();
+
+            if (!active) return;
+            setStatus("success");
+            setMessage("交易已成功广播，正在返回对话主线程...");
+            setTimeout(() => {
+              router.replace({
+                pathname: "/(tabs)/chat",
+                params: {
+                  source: "signature-callback",
+                  sigContextId: pending.id,
+                  sigFlow: pending.flow,
+                  sigStatus: "signed",
+                  broadcastPhase: broadcastResult.phase,
+                  broadcastOrderId: broadcastResult.orderId ?? undefined,
+                  broadcastTxHash: broadcastResult.txHash ?? undefined,
+                },
+              });
+            }, 900);
+            return;
+          } catch (broadcastError) {
+            // 广播失败时回退到原来的 AI 中转逻辑，避免用户卡死在回调页面
+            console.warn("[SignCallback] direct broadcast failed, falling back to chat relay", broadcastError);
+          }
+        }
+
+        // 回退路径：通过 AI 对话中转（签名取消、错误或广播失败时）
+        const draft = buildChatDraft({
+          flow: pending.flow,
+          status: payload.status,
+          hasSignedTx,
+          txHash: payload.txHash,
+          error: payload.error,
+        });
+
+        const draftKey = `signature:${pending.id}:${payload.status || "returned"}`;
 
         finishSuccess(
           payload.status === "cancelled"
