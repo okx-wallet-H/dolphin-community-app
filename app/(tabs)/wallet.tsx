@@ -23,6 +23,7 @@ import Svg, { Circle, G } from "react-native-svg";
 
 import {
   getAccountAssets,
+  getMe,
   type AgentWalletAssetsResponse,
   type StoredWalletSnapshot,
   type WalletAssetItem,
@@ -227,11 +228,32 @@ export default function WalletScreen() {
     try {
       if (showLoading) setLoading(true);
       const raw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
-      const parsed = raw ? (JSON.parse(raw) as StoredWalletSnapshot) : null;
+      let parsed = raw ? (JSON.parse(raw) as StoredWalletSnapshot) : null;
+
+      if (!parsed?.evmAddress && !parsed?.solanaAddress) {
+        try {
+          const me = await getMe();
+          if (me.wallet?.evmAddress || me.wallet?.solanaAddress) {
+            parsed = {
+              email: me.wallet.email ?? me.email ?? '',
+              evmAddress: me.wallet.evmAddress ?? '',
+              solanaAddress: me.wallet.solanaAddress ?? '',
+              updatedAt: new Date().toISOString(),
+              mockMode: false,
+            };
+            await AsyncStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(parsed));
+          }
+        } catch (restoreError) {
+          console.warn("Restore wallet snapshot failed:", restoreError);
+        }
+      }
+
       setWallet(parsed);
       if (parsed?.evmAddress || parsed?.solanaAddress) {
         const result = await getAccountAssets(parsed);
         setAssets(result);
+      } else {
+        setAssets(null);
       }
     } catch (e) { console.warn("Load assets error:", e); }
     finally { setLoading(false); setRefreshing(false); }

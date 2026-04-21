@@ -18,6 +18,8 @@ type SessionPayload = {
   appId?: string;
   name?: string;
   email?: string;
+  evmAddress?: string;
+  solanaAddress?: string;
   exp?: number;
   iat?: number;
 };

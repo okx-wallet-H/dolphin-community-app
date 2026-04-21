@@ -87,6 +87,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         appId,
         name: result.sessionUser.name,
         email: result.sessionUser.email,
+        evmAddress: result.wallet.evmAddress,
+        solanaAddress: result.wallet.solanaAddress,
         iat,
         exp,
       },

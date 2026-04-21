@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { getSessionToken } from "@/lib/_core/auth";
 import { getApiBaseUrl } from "@/constants/oauth";
+import { getMe } from "@/lib/_core/api";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -127,15 +128,46 @@ export default function ChatScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(WALLET_STORAGE_KEY)
-      .then((raw) => {
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as WalletSnapshot;
-        setWallet(parsed);
-      })
-      .catch((error) => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as WalletSnapshot;
+          if (mounted) {
+            setWallet(parsed);
+          }
+          return;
+        }
+
+        const me = await getMe();
+        if (!mounted || (!me.wallet?.evmAddress && !me.wallet?.solanaAddress)) {
+          return;
+        }
+
+        const restoredWallet: WalletSnapshot = {
+          email: me.wallet.email ?? me.email ?? undefined,
+          evmAddress: me.wallet.evmAddress ?? '',
+          solanaAddress: me.wallet.solanaAddress ?? '',
+        };
+        setWallet(restoredWallet);
+        await AsyncStorage.setItem(
+          WALLET_STORAGE_KEY,
+          JSON.stringify({
+            ...restoredWallet,
+            updatedAt: new Date().toISOString(),
+            mockMode: false,
+          }),
+        );
+      } catch (error) {
         console.warn("Load wallet snapshot failed:", error);
-      });
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const push = useCallback((newMsgs: ChatMessage[]) => {

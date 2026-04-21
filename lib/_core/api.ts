@@ -41,6 +41,14 @@ export type AgentUserResponse = {
   lastSignedIn: string;
 };
 
+export type AgentMeResponse = AgentUserResponse & {
+  wallet: {
+    email?: string | null;
+    evmAddress?: string;
+    solanaAddress?: string;
+  };
+};
+
 function maskEmail(email: string) {
   const [localPart, domainPart] = email.trim().toLowerCase().split('@');
   if (!localPart || !domainPart) {
@@ -74,9 +82,18 @@ function normalizeAgentUser(payload: unknown): AgentUserResponse {
   };
 }
 
-export async function getMe(): Promise<AgentUserResponse> {
+export async function getMe(): Promise<AgentMeResponse> {
   const payload = (await apiCall('/api/auth/me')) as Record<string, unknown>;
-  return normalizeAgentUser(payload);
+  const rawWallet = payload.wallet && typeof payload.wallet === 'object' ? (payload.wallet as Record<string, unknown>) : {};
+  const user = normalizeAgentUser(payload);
+  return {
+    ...user,
+    wallet: {
+      email: typeof rawWallet.email === 'string' ? rawWallet.email : user.email,
+      evmAddress: typeof rawWallet.evmAddress === 'string' ? rawWallet.evmAddress : '',
+      solanaAddress: typeof rawWallet.solanaAddress === 'string' ? rawWallet.solanaAddress : '',
+    },
+  };
 }
 
 export async function sendAgentWalletOtp(email: string): Promise<AgentWalletSendOtpResponse> {

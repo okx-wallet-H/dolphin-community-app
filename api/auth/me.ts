@@ -14,8 +14,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { user } = authenticateRequest(req);
-    return res.status(200).json(toSuccessEnvelope({ user }));
+    const { user, payload } = authenticateRequest(req);
+    const wallet = {
+      email: user.email,
+      evmAddress: typeof payload.evmAddress === 'string' ? payload.evmAddress : '',
+      solanaAddress: typeof payload.solanaAddress === 'string' ? payload.solanaAddress : '',
+    };
+    return res.status(200).json(toSuccessEnvelope({ user, wallet }));
   } catch (error) {
     return res.status(401).json({
       code: '401',

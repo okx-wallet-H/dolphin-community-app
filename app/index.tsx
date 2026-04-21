@@ -189,22 +189,52 @@ export default function LoginRoute() {
       try {
         const token = await getSessionToken();
         if (!token) return;
+
         const currentUser = await getUserInfo();
-        if (currentUser) {
-          router.replace('/(tabs)/chat');
-          return;
-        }
+        const storedWalletRaw = await AsyncStorage.getItem(WALLET_STORAGE_KEY);
+        const storedWallet = storedWalletRaw ? JSON.parse(storedWalletRaw) : null;
         const me = await getMe();
+
         if (me) {
-          await setUserInfo({ ...me, lastSignedIn: new Date(me.lastSignedIn) });
+          await setUserInfo({
+            id: me.id,
+            openId: me.openId,
+            name: me.name,
+            email: me.email,
+            loginMethod: me.loginMethod,
+            lastSignedIn: new Date(me.lastSignedIn),
+          });
+
+          const restoredWallet =
+            me.wallet?.evmAddress || me.wallet?.solanaAddress
+              ? {
+                  email: me.wallet.email ?? me.email ?? '',
+                  evmAddress: me.wallet.evmAddress ?? '',
+                  solanaAddress: me.wallet.solanaAddress ?? '',
+                  updatedAt: new Date().toISOString(),
+                  mockMode: false,
+                }
+              : storedWallet;
+
+          if (restoredWallet) {
+            await AsyncStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(restoredWallet));
+            router.replace('/(tabs)/chat');
+            return;
+          }
+        }
+
+        if (currentUser && storedWallet) {
           router.replace('/(tabs)/chat');
           return;
         }
+
         await removeSessionToken();
         await clearUserInfo();
+        await AsyncStorage.removeItem(WALLET_STORAGE_KEY);
       } catch {
         await removeSessionToken();
         await clearUserInfo();
+        await AsyncStorage.removeItem(WALLET_STORAGE_KEY);
       } finally {
         if (mounted) {
           setRestoring(false);
