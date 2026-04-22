@@ -29,27 +29,27 @@ const schemeFromBundleId = `manus${timestamp}`;
 const env = {
   // 应用品牌信息，直接在此处维护
   appName: "H Wallet",
-  appSlug: "h3",
+  appSlug: "h-wallet",
   // 应用 Logo 地址；留空时使用 assets/images/icon.png
   logoUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310519663458603911/AQ7DNFW2AtZXchZVZkUYdL/h-wallet-icon-UTsNtRdFQEnoWpyzgewLzd.png",
-  scheme: schemeFromBundleId,
+  scheme: "hwallet",
   // iOS Bundle ID 必须与描述文件中的值完全一致
-  iosBundleId: "app.parsnip5809.bear3414",
+  iosBundleId: "com.anonymous.hwallet",
   // Android 包名保持现有逻辑，不做变更
-  androidPackage: bundleId,
+  androidPackage: "com.anonymous.hwallet",
 };
 
 const expoProjectId =
-  process.env.EXPO_PROJECT_ID?.trim() || "174d6be5-8a0e-429a-8b8b-7b2ce9a8906d";
+  process.env.EXPO_PROJECT_ID?.trim() || "7450ea94-86bb-416a-9c98-3dab1d80f6e9";
 
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  owner: "hwallet",
+  owner: "tai-team",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
-  scheme: env.scheme,
+  scheme: "hwallet",
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
   ios: {
@@ -77,7 +77,7 @@ const config: ExpoConfig = {
         autoVerify: true,
         data: [
           {
-            scheme: env.scheme,
+            scheme: "hwallet",
             host: "*",
           },
         ],

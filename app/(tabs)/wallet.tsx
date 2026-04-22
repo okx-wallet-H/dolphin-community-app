@@ -66,30 +66,45 @@ const TOKENS: Record<string, { letter: string; bg: string; fg: string }> = {
 };
 
 type ChainCard = AgentWalletAssetsResponse["walletAddresses"][number];
+type DonutSegment = { color: string; pct: number };
+
+const DONUT_COLORS = ["#60A5FA", "#34D399", "#C4B5FD", "#F59E0B", "#F472B6"] as const;
+
 function fmt(v: number, d = 2) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }).format(v); }
 function toNum(v: unknown) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
 function shortAddress(address: string) { return address.length > 18 ? `${address.slice(0, 8)}...${address.slice(-8)}` : address; }
 
 /* ── Donut Chart ────────────────────────────────── */
-function DonutChart({ size = 100 }: { size?: number }) {
+function DonutChart({ size = 100, segments }: { size?: number; segments: DonutSegment[] }) {
   const sw = 15;
   const r = (size - sw) / 2;
   const cx = size / 2;
   const circ = 2 * Math.PI * r;
-  const segs = [
-    { color: "#60A5FA", pct: 35 },
-    { color: "#34D399", pct: 40 },
-    { color: "#C4B5FD", pct: 25 },
-  ];
+  const normalizedSegments = segments.filter((segment) => segment.pct > 0);
   let off = 0;
+
   return (
     <Svg width={size} height={size}>
+      <Circle cx={cx} cy={cx} r={r} stroke="rgba(255,255,255,0.22)" strokeWidth={sw} fill="none" />
       <G rotation="-90" origin={`${cx}, ${cx}`}>
-        {segs.map((s, i) => {
-          const dash = `${(s.pct / 100) * circ} ${circ}`;
+        {normalizedSegments.map((segment, index) => {
+          const dash = `${(segment.pct / 100) * circ} ${circ}`;
           const cur = -off;
-          off += (s.pct / 100) * circ;
-          return <Circle key={i} cx={cx} cy={cx} r={r} stroke={s.color} strokeWidth={sw} fill="none" strokeDasharray={dash} strokeDashoffset={cur} strokeLinecap="round" />;
+          off += (segment.pct / 100) * circ;
+          return (
+            <Circle
+              key={`${segment.color}-${index}`}
+              cx={cx}
+              cy={cx}
+              r={r}
+              stroke={segment.color}
+              strokeWidth={sw}
+              fill="none"
+              strokeDasharray={dash}
+              strokeDashoffset={cur}
+              strokeLinecap="round"
+            />
+          );
         })}
       </G>
     </Svg>
@@ -197,6 +212,20 @@ export default function WalletScreen() {
     }
     return fallback;
   }, [chainCards, wallet]);
+  const donutSegments = useMemo<DonutSegment[]>(() => {
+    const total = display.reduce((sum, item) => sum + toNum(item.valueUsd), 0);
+    if (total <= 0) {
+      return [];
+    }
+
+    return [...display]
+      .sort((a, b) => toNum(b.valueUsd) - toNum(a.valueUsd))
+      .slice(0, DONUT_COLORS.length)
+      .map((item, index) => ({
+        color: DONUT_COLORS[index],
+        pct: (toNum(item.valueUsd) / total) * 100,
+      }));
+  }, [display]);
 
   const loadAssets = useCallback(async (showLoading = true) => {
     try {
@@ -299,7 +328,7 @@ export default function WalletScreen() {
                   <Text style={s.changeVal}>{loading ? "正在同步链上资产" : totalUsd > 0 ? "已同步真实链上资产" : "暂未查询到资产"}</Text>
                 </View>
               </View>
-              <DonutChart size={96} />
+              <DonutChart size={96} segments={donutSegments} />
             </View>
           </LinearGradient>
 

@@ -1,35 +1,33 @@
-import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
 
 function readProjectFile(relativePath: string) {
   return fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
 }
 
 describe("H Wallet 结构化业务入口校验", () => {
-  it("智能对话页应接入价格查询、兑换报价执行与转账回执闭环", () => {
+  it("智能对话页应接入自然语言解析、快速交易识别与真实链上执行链路", () => {
     const chatScreen = readProjectFile("app/(tabs)/chat.tsx");
 
     expect(chatScreen).toContain("parseChatAiIntent");
-    expect(chatScreen).toContain("parseDexSwapIntent");
-    expect(chatScreen).toContain("getDexSwapQuote");
-    expect(chatScreen).toContain("executeDexSwap");
-    expect(chatScreen).toContain("detectTransferIntent");
-    expect(chatScreen).toContain("兑换执行回执");
-    expect(chatScreen).toContain("转账执行回执");
+    expect(chatScreen).toContain("parseQuickSwapIntent");
+    expect(chatScreen).toContain("previewOnchainSwap");
+    expect(chatScreen).toContain("executeOnchainSwap");
+    expect(chatScreen).toContain("先恢复 Agent Wallet");
     expect(chatScreen).toContain('router.push("/(tabs)/wallet")');
-    expect(chatScreen).toContain('router.push("/(tabs)/earn")');
+    expect(chatScreen).toContain('router.push("/earn")');
   });
 
-  it("赚币页应支持策略选择后调用 AI 意图链路并展示执行反馈", () => {
-    const earnScreen = readProjectFile("app/(tabs)/earn.tsx");
+  it("赚币页应只展示在线策略生成链路与真实空态，不再回退本地演示模板", () => {
+    const earnScreen = readProjectFile("app/earn.tsx");
 
     expect(earnScreen).toContain("parseChatAiIntent");
-    expect(earnScreen).toContain("handleActivateStrategy");
-    expect(earnScreen).toContain("ExecutionFeedback");
-    expect(earnScreen).toContain("专业演示方案");
-    expect(earnScreen).toContain("自动赚币已开启");
-    expect(earnScreen).toContain("自动任务卡片");
+    expect(earnScreen).toContain("normalizeEarnPlan");
+    expect(earnScreen).toContain("AI 智能赚币");
+    expect(earnScreen).toContain("当前仅展示实时生成的在线赚币策略");
+    expect(earnScreen).toContain("重新生成策略");
+    expect(earnScreen).not.toContain("专业演示方案");
   });
 
   it("应用配置应使用 H Wallet 品牌名称并完成 logoUrl 配置", () => {
@@ -56,15 +54,16 @@ describe("H Wallet 结构化业务入口校验", () => {
     expect(tabLayout).toContain('title: "我的"');
   });
 
-  it("tabs 默认首页应跳转到钱包页，而钱包页本身包含资产查询与跨页面联动结构", () => {
+  it("tabs 默认首页应跳转到对话页，而钱包页本身包含真实资产查询与钱包恢复结构", () => {
     const indexScreen = readProjectFile("app/(tabs)/index.tsx");
     const walletScreen = readProjectFile("app/(tabs)/wallet.tsx");
 
     expect(indexScreen).toContain("Redirect");
-    expect(indexScreen).toContain("/(tabs)/wallet");
+    expect(indexScreen).toContain("/(tabs)/chat");
     expect(walletScreen).toContain("getAccountAssets");
-    expect(walletScreen).toContain('router.push("/(tabs)/chat")');
-    expect(walletScreen).toContain('router.push("/(tabs)/earn")');
-    expect(walletScreen).toContain("自动任务卡片");
+    expect(walletScreen).toContain("getMe()");
+    expect(walletScreen).toContain("WALLET_STORAGE_KEY");
+    expect(walletScreen).toContain("Clipboard.setStringAsync");
+    expect(walletScreen).toContain("DonutChart");
   });
 });

@@ -38,11 +38,11 @@ const DANGER = ManusColors.danger;
 const FILTERS = ["总览", "热门", "AI关注", "稳定币", "二层网络"] as const;
 
 const MARKET_BASE = [
-  { id: "btc", symbol: "BTC", name: "比特币", volume: "$32.8B" },
-  { id: "eth", symbol: "ETH", name: "以太坊", volume: "$21.4B" },
-  { id: "sol", symbol: "SOL", name: "索拉纳", volume: "$6.9B" },
-  { id: "bnb", symbol: "BNB", name: "币安币", volume: "$4.1B" },
-  { id: "sui", symbol: "SUI", name: "Sui", volume: "$1.2B" },
+  { id: "btc", symbol: "BTC", name: "比特币" },
+  { id: "eth", symbol: "ETH", name: "以太坊" },
+  { id: "sol", symbol: "SOL", name: "索拉纳" },
+  { id: "bnb", symbol: "BNB", name: "币安币" },
+  { id: "sui", symbol: "SUI", name: "Sui" },
 ] as const;
 
 const TOKEN_COLORS: Record<string, string> = {
@@ -59,7 +59,7 @@ type SnapshotRow = {
   change24h: number | null;
   volume24h?: string;
   updateTime: string;
-  source?: "okx-mcp" | "demo";
+  source?: "okx-mcp" | "public-market";
 };
 
 type MarketCard = {
@@ -109,6 +109,28 @@ function formatUpdatedLabel(value?: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })}`;
+}
+
+function formatVolumeLabel(value?: string): string {
+  if (!value) {
+    return "等待同步";
+  }
+
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    if (numeric >= 1e9) {
+      return `$${(numeric / 1e9).toFixed(1)}B`;
+    }
+    if (numeric >= 1e6) {
+      return `$${(numeric / 1e6).toFixed(1)}M`;
+    }
+    if (numeric >= 1e3) {
+      return `$${(numeric / 1e3).toFixed(1)}K`;
+    }
+    return `$${numeric.toFixed(0)}`;
+  }
+
+  return value.startsWith("$") ? value : `$${value}`;
 }
 
 function buildSparkHeights(seed: string, positive: boolean): number[] {
@@ -183,6 +205,7 @@ export default function MarketScreen() {
         ...item,
         priceText: snapshot?.price ? formatPrice(snapshot.price) : loading ? "同步中" : "等待行情",
         changeText: formatPercent(snapshot?.change24h ?? null),
+        volume: formatVolumeLabel(snapshot?.volume24h),
         trendLabel:
           snapshot?.change24h === null || snapshot?.change24h === undefined
             ? "等待行情波动确认"

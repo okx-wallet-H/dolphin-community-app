@@ -160,6 +160,12 @@ function parseQuickSwapIntent(message: string): QuickSwapIntent | null {
   return null;
 }
 
+type WorkflowButton = {
+  label: string;
+  prompt?: string;
+  route?: string;
+};
+
 type ChatCard =
   | { kind: "price"; symbol: string; price: number; change?: number | null }
   | { kind: "deposit"; address: string; networkLabel: string; chainKind: "evm" | "solana" }
@@ -176,6 +182,14 @@ type ChatCard =
       txHash?: string;
       txId?: string;
       errorMessage?: string;
+    }
+  | {
+      kind: "action";
+      eyebrow: string;
+      title: string;
+      description: string;
+      primary: WorkflowButton;
+      secondary?: WorkflowButton;
     };
 
 type ChatMessage = {
@@ -248,7 +262,7 @@ function getSwapPhaseTone(phase: Extract<ChatCard, { kind: "swap" }>['phase']) {
   return { label: "已预览", color: T.txt2 };
 }
 
-function PriceCard({ symbol, price, change, onTrade }: { symbol: string; price: number; change?: number | null; onTrade: () => void }) {
+function PriceCard({ symbol, price, change, onDetails, onTrade }: { symbol: string; price: number; change?: number | null; onDetails: () => void; onTrade: () => void }) {
   const hasChange = typeof change === "number" && Number.isFinite(change);
   const up = hasChange ? change >= 0 : true;
   return (
@@ -273,7 +287,7 @@ function PriceCard({ symbol, price, change, onTrade }: { symbol: string; price: 
         )}
       </View>
       <View style={s.pcActions}>
-        <Pressable style={s.pcBtnOutline} onPress={onTrade}><Text style={s.pcBtnOutlineTxt}>查看详情</Text></Pressable>
+        <Pressable style={s.pcBtnOutline} onPress={onDetails}><Text style={s.pcBtnOutlineTxt}>查看详情</Text></Pressable>
         <Pressable style={s.pcBtnFill} onPress={onTrade}><LinearGradient colors={[T.purple1, T.purple3]} style={s.pcBtnGrad}><Text style={s.pcBtnFillTxt}>立即交易</Text></LinearGradient></Pressable>
       </View>
     </View>
@@ -293,7 +307,23 @@ function DepositCard({ address, networkLabel, chainKind }: { address: string; ne
   );
 }
 
-function SwapCard({ card, onOpenStrategy }: { card: Extract<ChatCard, { kind: "swap" }>; onOpenStrategy: () => void }) {
+function ActionCard({ card, onPrimary, onSecondary }: { card: Extract<ChatCard, { kind: "action" }>; onPrimary: () => void; onSecondary?: () => void }) {
+  return (
+    <View style={s.actionCard}>
+      <Text style={s.depositEyebrow}>{card.eyebrow}</Text>
+      <Text style={s.actionTitle}>{card.title}</Text>
+      <Text style={s.actionDescription}>{card.description}</Text>
+      <View style={s.pcActions}>
+        {card.secondary ? (
+          <Pressable style={s.pcBtnOutline} onPress={onSecondary}><Text style={s.pcBtnOutlineTxt}>{card.secondary.label}</Text></Pressable>
+        ) : null}
+        <Pressable style={s.pcBtnFill} onPress={onPrimary}><LinearGradient colors={[T.purple1, T.purple3]} style={s.pcBtnGrad}><Text style={s.pcBtnFillTxt}>{card.primary.label}</Text></LinearGradient></Pressable>
+      </View>
+    </View>
+  );
+}
+
+function SwapCard({ card, onPrimaryAction, onSecondaryAction }: { card: Extract<ChatCard, { kind: "swap" }>; onPrimaryAction: () => void; onSecondaryAction: () => void }) {
   const tone = getSwapPhaseTone(card.phase);
   return (
     <View style={s.swapCard}>
@@ -322,8 +352,8 @@ function SwapCard({ card, onOpenStrategy }: { card: Extract<ChatCard, { kind: "s
       {card.txHash ? <Text style={s.swapSubMeta}>交易哈希 {maskAddress(card.txHash)}</Text> : null}
       {card.errorMessage ? <Text style={s.swapError}>{card.errorMessage}</Text> : null}
       <View style={s.swapActions}>
-        <Pressable style={s.pcBtnOutline} onPress={onOpenStrategy}><Text style={s.pcBtnOutlineTxt}>继续发指令</Text></Pressable>
-        <Pressable style={s.pcBtnFill} onPress={onOpenStrategy}><LinearGradient colors={[T.purple1, T.purple3]} style={s.pcBtnGrad}><Text style={s.pcBtnFillTxt}>查看策略中心</Text></LinearGradient></Pressable>
+        <Pressable style={s.pcBtnOutline} onPress={onSecondaryAction}><Text style={s.pcBtnOutlineTxt}>{card.phase === "failed" ? "换个指令" : "查看钱包"}</Text></Pressable>
+        <Pressable style={s.pcBtnFill} onPress={onPrimaryAction}><LinearGradient colors={[T.purple1, T.purple3]} style={s.pcBtnGrad}><Text style={s.pcBtnFillTxt}>{card.phase === "success" ? "继续交易" : card.phase === "failed" ? "查看行情" : "策略中心"}</Text></LinearGradient></Pressable>
       </View>
     </View>
   );
@@ -414,7 +444,14 @@ export default function ChatScreen() {
     }
 
     if (!activeWallet || activeWallet.mockMode || (!activeWallet.evmAddress && !activeWallet.solanaAddress)) {
-      appendAssistant("当前会话还没恢复出真实 Agent Wallet 地址。请重新登录一次，随后即可直接执行一句话交易。\n");
+      appendAssistant("", {
+        kind: "action",
+        eyebrow: "需要登录",
+        title: "先恢复 Agent Wallet",
+        description: "登录后就能直接走自动交易工作流，不会再反复追问。",
+        primary: { label: "立即登录", route: "/" },
+        secondary: { label: "查看钱包", route: "/(tabs)/wallet" },
+      });
       return;
     }
 
@@ -423,13 +460,27 @@ export default function ChatScreen() {
     const finalIntent = parsedIntent ?? (remoteIntent?.intent.action === "swap" ? remoteIntent.intent : null);
 
     if (!finalIntent) {
-      appendAssistant(aiReply || "我已识别到交易需求，但还没能把这句话解析成明确的兑换参数，请再说清楚一点，例如“100 USDT 换 ETH”。");
+      appendAssistant("", {
+        kind: "action",
+        eyebrow: "需要更明确的交易参数",
+        title: "直接点一个示例继续",
+        description: "我会按固定交易工作流自动预览，不再来回追问。",
+        primary: { label: "100 USDT 换 ETH", prompt: "100 USDT 换 ETH" },
+        secondary: { label: "50 USDT 换 BTC", prompt: "50 USDT 换 BTC" },
+      });
       return;
     }
 
     const resolved = resolveSwapConfig(finalIntent, activeWallet);
     if (!resolved) {
-      appendAssistant(`暂时只支持主流资产的一句话自动交易：${finalIntent.fromSymbol || "FROM"} → ${finalIntent.toSymbol || "TO"} 这条链路还未接入，或当前钱包缺少对应链地址。`);
+      appendAssistant("", {
+        kind: "action",
+        eyebrow: "当前交易链路未接入",
+        title: `${finalIntent.fromSymbol || "FROM"} → ${finalIntent.toSymbol || "TO"} 还不能自动执行`,
+        description: "先查看行情或改用主流资产，我会继续按固定流程返回交易卡片。",
+        primary: { label: "查看行情", route: "/(tabs)/market" },
+        secondary: { label: "改用 ETH 示例", prompt: "100 USDT 换 ETH" },
+      });
       return;
     }
 
@@ -454,8 +505,8 @@ export default function ChatScreen() {
 
     appendAssistant(
       aiReply || (execution.phase === "awaiting_confirmation"
-        ? `已生成 ${resolved.displayAmount} ${resolved.fromConfig.symbol} → ${resolved.toConfig.symbol} 的真实交易请求，等待 Agent Wallet 完成确认。`
-        : `已按你的句子发起 ${resolved.displayAmount} ${resolved.fromConfig.symbol} → ${resolved.toConfig.symbol} 的真实交易链路。`),
+        ? "交易已准备好，等待钱包确认。"
+        : "交易工作流已启动。"),
       {
         kind: "swap",
         phase: execution.phase,
@@ -473,30 +524,35 @@ export default function ChatScreen() {
     );
   }, [appendAssistant, wallet]);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
+  const submitMessage = useCallback(async (rawText: string) => {
+    const text = rawText.trim();
     if (!text || busy) return;
     push([{ id: `u-${Date.now()}`, role: "user", content: text }]);
-    setInput("");
     setBusy(true);
 
     try {
       const quickSwapIntent = parseQuickSwapIntent(text);
       if (quickSwapIntent) {
-        appendAssistant(`已识别交易指令，正在获取 ${quickSwapIntent.amount} ${quickSwapIntent.fromSymbol} → ${quickSwapIntent.toSymbol} 的实时报价并提交真实交易...`);
+        appendAssistant("正在准备交易...");
         await handleSwapFlow(text, "", quickSwapIntent);
         return;
       }
 
       const ai = await parseChatAiIntent({ message: text, wallet: wallet ?? undefined });
       if (!("intent" in ai) || !ai.intent) {
-        appendAssistant("当前消息已命中特殊策略链路，后续我会继续把这一类结构化结果也接进同一个自动执行界面。");
+        appendAssistant("", {
+          kind: "action",
+          eyebrow: "策略链路已识别",
+          title: "进入自动化策略流程",
+          description: "这类请求我会直接带你进入策略中心，不再停留在文本追问。",
+          primary: { label: "查看策略中心", route: "/(tabs)/community" },
+          secondary: { label: "继续对话", prompt: "帮我追踪 BTC 信号" },
+        });
         return;
       }
-      const reply = ai.intent.reply || "已收到你的请求。";
 
       if (ai.intent.action === "deposit" && ai.deposit?.address) {
-        appendAssistant(reply, {
+        appendAssistant("", {
           kind: "deposit",
           address: String(ai.deposit.address),
           networkLabel: String(ai.deposit.networkLabel || "请充值到当前 Agent Wallet 地址"),
@@ -504,12 +560,28 @@ export default function ChatScreen() {
         });
       } else if (ai.intent.action === "market" && ai.intent.priceSymbol && ai.intent.priceText) {
         const priceNum = parseFloat(ai.intent.priceText.replace(/[^0-9.]/g, "")) || 0;
-        appendAssistant(reply, { kind: "price", symbol: ai.intent.priceSymbol, price: priceNum, change: null });
+        appendAssistant("", { kind: "price", symbol: ai.intent.priceSymbol, price: priceNum, change: null });
       } else if (ai.intent.action === "swap") {
-        appendAssistant("已识别交易意图，正在获取实时报价并提交真实交易...");
-        await handleSwapFlow(text, reply);
+        appendAssistant("正在准备交易...");
+        await handleSwapFlow(text, ai.intent.reply || "交易工作流已识别。");
+      } else if (ai.intent.action === "earn") {
+        appendAssistant("", {
+          kind: "action",
+          eyebrow: "理财工作流",
+          title: "已准备好下一步操作",
+          description: "点一下就进入赚币页，继续按卡片流程完成。",
+          primary: { label: "前往理财", route: "/earn" },
+          secondary: { label: "查看行情", route: "/(tabs)/market" },
+        });
       } else {
-        appendAssistant(reply);
+        appendAssistant(ai.intent.reply || "已收到，我会继续按固定工作流处理。", ai.intent.action === "general" ? {
+          kind: "action",
+          eyebrow: "下一步",
+          title: "选择你要继续的方向",
+          description: "固定流程我会直接执行，避免重复确认。",
+          primary: { label: "看 BTC 行情", prompt: "BTC 价格" },
+          secondary: { label: "开始交易", prompt: "100 USDT 换 ETH" },
+        } : undefined);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "网络错误";
@@ -520,7 +592,27 @@ export default function ChatScreen() {
     } finally {
       setBusy(false);
     }
-  }, [appendAssistant, busy, handleSwapFlow, input, push, wallet]);
+  }, [appendAssistant, busy, handleSwapFlow, push, wallet]);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    await submitMessage(text);
+  }, [busy, input, submitMessage]);
+
+
+  const triggerWorkflowButton = useCallback((button?: WorkflowButton) => {
+    if (!button) return;
+    if (button.prompt) {
+      setInput("");
+      void submitMessage(button.prompt);
+      return;
+    }
+    if (button.route) {
+      router.push(button.route as never);
+    }
+  }, [router, submitMessage]);
 
   const onQuick = useCallback((key: string) => {
     if (key === "finance") {
@@ -539,8 +631,11 @@ export default function ChatScreen() {
     const map: Record<string, string> = {
       trade: "100 USDT 换 ETH",
     };
-    if (map[key]) setInput(map[key]);
-  }, [router]);
+    if (map[key]) {
+      setInput("");
+      void submitMessage(map[key]);
+    }
+  }, [router, submitMessage]);
 
   const renderMsg = useCallback(({ item }: { item: ChatMessage }) => {
     if (item.role === "user") {
@@ -550,28 +645,77 @@ export default function ChatScreen() {
         </View>
       );
     }
-    return (
-      <View style={s.aRow}>
-        {item.card?.kind === "price" ? (
+
+    const card = item.card;
+
+    if (card?.kind === "price") {
+      return (
+        <View style={s.aRow}>
           <PriceCard
-            symbol={item.card.symbol}
-            price={item.card.price}
-            change={item.card.change}
-            onTrade={() => {
-              const symbol = item.card?.kind === "price" ? item.card.symbol : "BTC";
-              setInput(`${symbol} 价格`);
+            symbol={card.symbol}
+            price={card.price}
+            change={card.change}
+            onDetails={() => router.push("/(tabs)/market")}
+            onTrade={() => void submitMessage(`买入 100 U 的 ${card.symbol}`)}
+          />
+        </View>
+      );
+    }
+
+    if (card?.kind === "deposit") {
+      return (
+        <View style={s.aRow}>
+          <DepositCard address={card.address} networkLabel={card.networkLabel} chainKind={card.chainKind} />
+        </View>
+      );
+    }
+
+    if (card?.kind === "swap") {
+      return (
+        <View style={s.aRow}>
+          <SwapCard
+            card={card}
+            onPrimaryAction={() => {
+              if (card.phase === "failed") {
+                router.push("/(tabs)/market");
+                return;
+              }
+              if (card.phase === "success") {
+                void submitMessage(`买入 100 U 的 ${card.toSymbol}`);
+                return;
+              }
+              router.push("/(tabs)/community");
+            }}
+            onSecondaryAction={() => {
+              if (card.phase === "failed") {
+                void submitMessage("100 USDT 换 ETH");
+                return;
+              }
+              router.push("/(tabs)/wallet");
             }}
           />
-        ) : item.card?.kind === "deposit" ? (
-          <DepositCard address={item.card.address} networkLabel={item.card.networkLabel} chainKind={item.card.chainKind} />
-        ) : item.card?.kind === "swap" ? (
-          <SwapCard card={item.card} onOpenStrategy={() => router.push("/(tabs)/community")} />
-        ) : (
-          <View style={s.aBubble}><Text style={s.aTxt}>{item.content}</Text></View>
-        )}
+        </View>
+      );
+    }
+
+    if (card?.kind === "action") {
+      return (
+        <View style={s.aRow}>
+          <ActionCard
+            card={card}
+            onPrimary={() => triggerWorkflowButton(card.primary)}
+            onSecondary={card.secondary ? () => triggerWorkflowButton(card.secondary) : undefined}
+          />
+        </View>
+      );
+    }
+
+    return (
+      <View style={s.aRow}>
+        <View style={s.aBubble}><Text style={s.aTxt}>{item.content}</Text></View>
       </View>
     );
-  }, []);
+  }, [router, submitMessage, triggerWorkflowButton]);
 
   const emptySubtitle = useMemo(() => {
     if (params.source === "strategy-center") {
@@ -692,12 +836,15 @@ const s = StyleSheet.create({
   aTxt: { fontSize: 15, color: T.txt1, lineHeight: 22 },
   priceCard: { width: SW - 80, borderRadius: 24, padding: 20, borderWidth: 1.5, borderColor: T.glassBorder, shadowColor: T.purple3, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 6, overflow: "hidden" },
   depositCard: { width: SW - 80, borderRadius: 24, padding: 20, borderWidth: 1.5, borderColor: T.glassBorder, backgroundColor: "rgba(255,255,255,0.92)", shadowColor: T.purple3, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 6 },
+  actionCard: { width: SW - 80, borderRadius: 24, padding: 20, borderWidth: 1.5, borderColor: T.glassBorder, backgroundColor: "rgba(255,255,255,0.94)", shadowColor: T.purple3, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 6, gap: 10 },
   swapCard: { width: SW - 80, borderRadius: 24, padding: 20, borderWidth: 1.5, borderColor: T.glassBorder, backgroundColor: "rgba(255,255,255,0.94)", shadowColor: T.purple3, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 6, gap: 12 },
   depositEyebrow: { fontSize: 12, fontWeight: "700", color: T.purple2, marginBottom: 8 },
   depositTitle: { fontSize: 16, fontWeight: "700", color: T.txt1, lineHeight: 22 },
   depositAddressWrap: { marginTop: 14, paddingHorizontal: 14, paddingVertical: 16, borderRadius: 16, backgroundColor: "rgba(124,58,237,0.08)", borderWidth: 1, borderColor: "rgba(124,58,237,0.12)" },
   depositAddressMono: { fontSize: 15, fontWeight: "700", color: T.txt1 },
   depositHint: { fontSize: 12, lineHeight: 18, color: T.txt2, marginTop: 12 },
+  actionTitle: { fontSize: 18, fontWeight: "800", color: T.txt1, lineHeight: 24 },
+  actionDescription: { fontSize: 14, lineHeight: 22, color: T.txt2 },
   pcHead: { flexDirection: "row", alignItems: "center", gap: 10 },
   pcTokenIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   pcTokenLetter: { fontSize: 16, fontWeight: "800", color: T.white },

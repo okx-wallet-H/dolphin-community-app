@@ -83,17 +83,32 @@ function normalizeAgentUser(payload: unknown): AgentUserResponse {
 }
 
 export async function getMe(): Promise<AgentMeResponse> {
-  const payload = (await apiCall('/api/auth/me')) as Record<string, unknown>;
-  const rawWallet = payload.wallet && typeof payload.wallet === 'object' ? (payload.wallet as Record<string, unknown>) : {};
-  const user = normalizeAgentUser(payload);
-  return {
-    ...user,
-    wallet: {
-      email: typeof rawWallet.email === 'string' ? rawWallet.email : user.email,
-      evmAddress: typeof rawWallet.evmAddress === 'string' ? rawWallet.evmAddress : '',
-      solanaAddress: typeof rawWallet.solanaAddress === 'string' ? rawWallet.solanaAddress : '',
-    },
-  };
+  const tryPaths = ['/api/agent-wallet/me', '/api/auth/me'];
+  let lastError: unknown = null;
+
+  for (const path of tryPaths) {
+    try {
+      const payload = (await apiCall(path)) as Record<string, unknown>;
+      const rawWallet = payload.wallet && typeof payload.wallet === 'object' ? (payload.wallet as Record<string, unknown>) : {};
+      const user = normalizeAgentUser(payload);
+      const result = {
+        ...user,
+        wallet: {
+          email: typeof rawWallet.email === 'string' ? rawWallet.email : user.email,
+          evmAddress: typeof rawWallet.evmAddress === 'string' ? rawWallet.evmAddress : '',
+          solanaAddress: typeof rawWallet.solanaAddress === 'string' ? rawWallet.solanaAddress : '',
+        },
+      };
+
+      if (result.wallet.evmAddress || result.wallet.solanaAddress || path === '/api/auth/me') {
+        return result;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('无法恢复当前 Agent Wallet 会话');
 }
 
 export async function sendAgentWalletOtp(email: string): Promise<AgentWalletSendOtpResponse> {
@@ -569,7 +584,7 @@ export type MarketSnapshot = {
   change24h: number | null;
   volume24h?: string;
   updateTime: string;
-  source: 'okx-mcp' | 'demo';
+  source: 'okx-mcp' | 'public-market';
 };
 
 export type HotTokenItem = {
@@ -1230,9 +1245,8 @@ type OkxMcpTokenPriceInfo = {
 };
 
 export async function getMarketSnapshotByMcp(symbol: string): Promise<MarketSnapshot> {
-  // 映射主流币地址
   const symbolToAddress: Record<string, { address: string; chain: string }> = {
-    BTC: { address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', chain: 'ethereum' }, // WBTC as proxy
+    BTC: { address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', chain: 'ethereum' },
     ETH: { address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', chain: 'ethereum' },
     SOL: { address: 'So11111111111111111111111111111111111111112', chain: 'solana' },
     OKB: { address: '0x75231f58b43240c9718dd58b4967c5114342a86c', chain: 'ethereum' },
@@ -1242,23 +1256,42 @@ export async function getMarketSnapshotByMcp(symbol: string): Promise<MarketSnap
 
   const normalizedSymbol = symbol.toUpperCase();
   const target = symbolToAddress[normalizedSymbol];
-  if (!target) {
-    throw new Error(`暂不支持查询 ${normalizedSymbol} 的实时价格`);
+
+  if (target) {
+    try {
+      const info = await callOkxMcpTool<OkxMcpTokenPriceInfo>('token_price_info', {
+        address: target.address,
+        chain: target.chain,
+      });
+
+      if (toNumber(info.price) > 0) {
+        return {
+          symbol: normalizedSymbol,
+          price: toNumber(info.price),
+          change24h: info.change24h ? toNumber(info.change24h) / 100 : null,
+          volume24h: info.volume24h,
+          updateTime: new Date().toISOString(),
+          source: 'okx-mcp',
+        };
+      }
+    } catch (error) {
+      console.warn(`getMarketSnapshotByMcp fallback for ${normalizedSymbol}:`, error);
+    }
   }
 
-  const info = await callOkxMcpTool<OkxMcpTokenPriceInfo>('token_price_info', {
-    address: target.address,
-    chain: target.chain,
-  });
+  const publicSnapshot = await getPublicMarketSnapshot(normalizedSymbol);
+  if (publicSnapshot) {
+    return {
+      symbol: publicSnapshot.symbol,
+      price: publicSnapshot.price,
+      change24h: publicSnapshot.change24h,
+      volume24h: undefined,
+      updateTime: publicSnapshot.updateTime,
+      source: 'public-market',
+    };
+  }
 
-  return {
-    symbol: normalizedSymbol,
-    price: toNumber(info.price),
-    change24h: info.change24h ? toNumber(info.change24h) / 100 : null,
-    volume24h: info.volume24h,
-    updateTime: new Date().toISOString(),
-    source: 'okx-mcp',
-  };
+  throw new Error(`暂时无法查询 ${normalizedSymbol} 的实时价格`);
 }
 
 export async function getHotTokensByMcp(chain = 'ethereum'): Promise<HotTokenItem[]> {
@@ -1488,12 +1521,7 @@ export async function getOnchainApprovals(params: {
   return (await apiCall(`/api/onchain/approvals?${query.toString()}`)) as OnchainApprovalsResponse;
 }
 
-async function getOkxPublicTickerPrice(symbol: string): Promise<{ price: number; updateTime: string } | null> {
-  const instId = MARKET_OKX_INST_ID_MAP[symbol];
-  if (!instId) {
-    return null;
-  }
-
+async function requestOkxPublicTicker(instId: string): Promise<{ price: number; updateTime: string } | null> {
   const response = await fetch(`${OKX_TICKER_URL}?instId=${encodeURIComponent(instId)}`);
   if (!response.ok) {
     throw new Error(`OKX public ticker request failed: ${response.status}`);
@@ -1508,11 +1536,34 @@ async function getOkxPublicTickerPrice(symbol: string): Promise<{ price: number;
   const price = Number(ticker?.last ?? NaN);
 
   if (payload.code !== '0' || !Number.isFinite(price) || price <= 0) {
-    throw new Error(String(payload.msg ?? 'OKX public ticker returned empty price'));
+    return null;
   }
 
   const updateTime = ticker?.ts ? new Date(Number(ticker.ts)).toISOString() : '';
   return { price, updateTime };
+}
+
+function buildOkxSpotInstIdCandidates(symbol: string): string[] {
+  const normalizedSymbol = MARKET_SYMBOL_ALIAS[symbol.toUpperCase()] || symbol.toUpperCase();
+  const mapped = MARKET_OKX_INST_ID_MAP[normalizedSymbol];
+  return [...new Set([mapped, `${normalizedSymbol}-USDT`, `${normalizedSymbol}-USD`].filter(Boolean) as string[])];
+}
+
+async function getOkxPublicTickerPrice(symbol: string): Promise<{ price: number; updateTime: string } | null> {
+  const candidates = buildOkxSpotInstIdCandidates(symbol);
+
+  for (const instId of candidates) {
+    try {
+      const ticker = await requestOkxPublicTicker(instId);
+      if (ticker) {
+        return ticker;
+      }
+    } catch (error) {
+      console.warn(`OKX public ticker request failed for ${instId}:`, error);
+    }
+  }
+
+  return null;
 }
 
 export async function getPublicMarketSnapshot(symbol: string): Promise<{
@@ -1522,36 +1573,35 @@ export async function getPublicMarketSnapshot(symbol: string): Promise<{
   updateTime: string;
 } | null> {
   const normalizedSymbol = MARKET_SYMBOL_ALIAS[symbol.toUpperCase()] || symbol.toUpperCase();
-  const instId = MARKET_OKX_INST_ID_MAP[normalizedSymbol];
-  if (!instId) {
-    return null;
+  const candidates = buildOkxSpotInstIdCandidates(normalizedSymbol);
+
+  for (const instId of candidates) {
+    const response = await fetch(`${OKX_TICKER_URL}?instId=${encodeURIComponent(instId)}`);
+    if (!response.ok) {
+      continue;
+    }
+
+    const payload = (await response.json()) as {
+      code?: string;
+      msg?: string;
+      data?: { last?: string; open24h?: string; ts?: string }[];
+    };
+    const ticker = Array.isArray(payload.data) ? payload.data[0] : undefined;
+    const price = Number(ticker?.last ?? NaN);
+    const open24h = Number(ticker?.open24h ?? NaN);
+    const change24h = Number.isFinite(price) && Number.isFinite(open24h) && open24h > 0 ? (price - open24h) / open24h : null;
+
+    if (payload.code === '0' && Number.isFinite(price) && price > 0) {
+      return {
+        symbol: normalizedSymbol,
+        price,
+        change24h,
+        updateTime: ticker?.ts ? new Date(Number(ticker.ts)).toISOString() : '',
+      };
+    }
   }
 
-  const response = await fetch(`${OKX_TICKER_URL}?instId=${encodeURIComponent(instId)}`);
-  if (!response.ok) {
-    throw new Error(`OKX public ticker request failed: ${response.status}`);
-  }
-
-  const payload = (await response.json()) as {
-    code?: string;
-    msg?: string;
-    data?: { last?: string; open24h?: string; ts?: string }[];
-  };
-  const ticker = Array.isArray(payload.data) ? payload.data[0] : undefined;
-  const price = Number(ticker?.last ?? NaN);
-  const open24h = Number(ticker?.open24h ?? NaN);
-  const change24h = Number.isFinite(price) && Number.isFinite(open24h) && open24h > 0 ? (price - open24h) / open24h : null;
-
-  if (payload.code !== '0' || !Number.isFinite(price) || price <= 0) {
-    throw new Error(String(payload.msg ?? 'OKX public ticker returned empty price'));
-  }
-
-  return {
-    symbol: normalizedSymbol,
-    price,
-    change24h,
-    updateTime: ticker?.ts ? new Date(Number(ticker.ts)).toISOString() : '',
-  };
+  return null;
 }
 
 type AssetResolvedPrice = {
@@ -1623,21 +1673,19 @@ export async function getRealtimeMarketSnapshot(symbol: string): Promise<string>
   const normalizedSymbol = MARKET_SYMBOL_ALIAS[symbol.toUpperCase()] || symbol.toUpperCase();
   const priceTarget = MARKET_PRICE_TARGET_MAP[normalizedSymbol];
 
-  if (!priceTarget) {
-    return `暂不支持查询 ${symbol} 的行情。`;
-  }
+  if (priceTarget) {
+    try {
+      const response = await getOkxOnchainMarketTicker(priceTarget.chainIndex, priceTarget.tokenContractAddress);
+      const ticker = response.data?.[0];
 
-  try {
-    const response = await getOkxOnchainMarketTicker(priceTarget.chainIndex, priceTarget.tokenContractAddress);
-    const ticker = response.data?.[0];
-
-    if (ticker?.price) {
-      const price = parseFloat(ticker.price);
-      const updateTime = ticker.time ? new Date(Number(ticker.time)).toLocaleString('zh-CN', { hour12: false }) : '';
-      return `${normalizedSymbol} 最新价: ${formatPrice(price)} USDT${updateTime ? `，更新时间: ${updateTime}` : ''}`;
+      if (ticker?.price) {
+        const price = parseFloat(ticker.price);
+        const updateTime = ticker.time ? new Date(Number(ticker.time)).toLocaleString('zh-CN', { hour12: false }) : '';
+        return `${normalizedSymbol} 最新价: ${formatPrice(price)} USDT${updateTime ? `，更新时间: ${updateTime}` : ''}`;
+      }
+    } catch (error) {
+      console.error(`获取 ${symbol} 链上行情失败，改用 OKX 公共行情兜底:`, error);
     }
-  } catch (error) {
-    console.error(`获取 ${symbol} 链上行情失败，改用 OKX 公共行情兜底:`, error);
   }
 
   try {
@@ -1645,7 +1693,7 @@ export async function getRealtimeMarketSnapshot(symbol: string): Promise<string>
     if (ticker) {
       return `${normalizedSymbol} 最新价: ${formatPrice(ticker.price)} USDT${ticker.updateTime ? `，更新时间: ${ticker.updateTime}` : ''}`;
     }
-    return `无法获取 ${symbol} 的行情数据。`;
+    return `暂时无法查询 ${normalizedSymbol} 的行情，请确认 symbol 是否受支持。`;
   } catch (error) {
     console.error(`获取 ${symbol} 行情失败:`, error);
     return `抱歉，查询 ${symbol} 行情时遇到网络问题。`;

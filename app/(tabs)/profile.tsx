@@ -31,8 +31,8 @@ type SettingItem = {
 };
 
 const settingsGroup1: SettingItem[] = [
-  { id: "security", title: "账户与安全", sub: "密码、生物识别、多因素认证", icon: "shield-check-outline", color: COLORS.primary },
-  { id: "wallet", title: "钱包管理", sub: "备份、导入、多链管理", icon: "wallet-outline", color: "#F59E0B" },
+  { id: "security", title: "安全中心", sub: "登录状态、邮箱验证、会话清理", icon: "shield-check-outline", color: COLORS.primary },
+  { id: "wallet", title: "钱包管理", sub: "地址恢复、多链管理、导入校验", icon: "wallet-outline", color: "#F59E0B" },
 ];
 
 const settingsGroup2: SettingItem[] = [
@@ -63,10 +63,30 @@ function SettingRow({ item, isLast }: { item: SettingItem; isLast: boolean }) {
 export default function ProfileScreen() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState("");
+  const [walletCount, setWalletCount] = useState(0);
+  const [sessionLabel, setSessionLabel] = useState("未登录");
+  const [securityLabel, setSecurityLabel] = useState("待校验");
 
   useEffect(() => {
-    getUserInfo().then((info) => {
-      if (info?.email) setUserEmail(info.email);
+    Promise.all([getUserInfo(), AsyncStorage.getItem("hwallet-agent-wallet")]).then(([info, rawWallet]) => {
+      if (info?.email) {
+        setUserEmail(info.email);
+        setSessionLabel("已登录");
+        setSecurityLabel("邮箱已验证");
+      }
+
+      if (!rawWallet) {
+        setWalletCount(0);
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(rawWallet) as { evmAddress?: string; solanaAddress?: string };
+        const count = [parsed?.evmAddress, parsed?.solanaAddress].filter(Boolean).length;
+        setWalletCount(count);
+      } catch {
+        setWalletCount(0);
+      }
     });
   }, []);
 
@@ -104,20 +124,19 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            {/* Stats */}
             <View style={s.statsRow}>
               <View style={s.statItem}>
-                <Text style={s.statValue}>126</Text>
-                <Text style={s.statLabel}>对话次数</Text>
+                <Text style={s.statValue}>{sessionLabel}</Text>
+                <Text style={s.statLabel}>登录状态</Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
-                <Text style={s.statValue}>8</Text>
-                <Text style={s.statLabel}>自动任务</Text>
+                <Text style={s.statValue}>{securityLabel}</Text>
+                <Text style={s.statLabel}>安全中心</Text>
               </View>
               <View style={s.statDivider} />
               <View style={s.statItem}>
-                <Text style={s.statValue}>3</Text>
+                <Text style={s.statValue}>{walletCount}</Text>
                 <Text style={s.statLabel}>已连钱包</Text>
               </View>
             </View>

@@ -1,6 +1,6 @@
-import { createHmac } from 'node:crypto';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyWalletOtp } from '../../server/_core/agent-wallet';
+import { sdk } from '../../server/_core/sdk';
 import { setCors, setSessionCookie, toErrorMessage } from '../_standalone-auth';
 
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
@@ -23,27 +23,6 @@ function normalizeEmail(value: unknown) {
 
 function normalizeCode(value: unknown) {
   return typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '';
-}
-
-function base64url(input: string | Buffer) {
-  return Buffer.from(input)
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
-}
-
-function signSessionToken(payload: Record<string, unknown>, secret: string) {
-  const header = { alg: 'HS256', typ: 'JWT' };
-  const encodedHeader = base64url(JSON.stringify(header));
-  const encodedPayload = base64url(JSON.stringify(payload));
-  const signature = createHmac('sha256', secret)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
-  return `${encodedHeader}.${encodedPayload}.${signature}`;
 }
 
 function getStatusCode(message: string) {
@@ -76,24 +55,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const result = await verifyWalletOtp({ email, code, requestId });
-    const secret = process.env.JWT_SECRET || 'h-wallet-dev-secret';
-    const appId = process.env.VITE_APP_ID || process.env.EXPO_PUBLIC_APP_ID || 'new-h-wallet';
     const now = Date.now();
-    const exp = Math.floor((now + ONE_YEAR_MS) / 1000);
-    const iat = Math.floor(now / 1000);
-    const appSessionId = signSessionToken(
-      {
-        openId: result.sessionUser.openId,
-        appId,
-        name: result.sessionUser.name,
-        email: result.sessionUser.email,
+    const appSessionId = await sdk.createSessionToken(result.sessionUser.openId, {
+      name: result.sessionUser.name,
+      expiresInMs: ONE_YEAR_MS,
+      wallet: {
+        email: result.wallet.email,
         evmAddress: result.wallet.evmAddress,
         solanaAddress: result.wallet.solanaAddress,
-        iat,
-        exp,
       },
-      secret,
-    );
+    });
 
     setSessionCookie(res, appSessionId);
 

@@ -28,28 +28,38 @@ export const OWNER_NAME = env.ownerName;
 export const API_BASE_URL = env.apiBaseUrl;
 
 /**
- * Get the API base URL, deriving from current hostname if not set.
- * Metro runs on 8081, API server runs on 3000.
- * URL pattern: https://PORT-sandboxid.region.domain
+ * Get the API base URL.
+ *
+ * 规则：
+ * 1. 显式环境变量优先。
+ * 2. 本地 Web 开发环境允许把 8081 映射到 3000。
+ * 3. Manus 预览与无法确认后端同域的场景，统一回到当前已验证通过的 Agent Wallet API 域，避免出现前端静态页与后端会话分裂。
  */
 export function getApiBaseUrl(): string {
-  // If API_BASE_URL is set, use it
   if (API_BASE_URL) {
     return API_BASE_URL.replace(/\/$/, "");
   }
 
-  // On web, derive from current hostname by replacing port 8081 with 3000
   if (ReactNative.Platform.OS === "web" && typeof window !== "undefined" && window.location) {
-    const { protocol, hostname } = window.location;
-    // Pattern: 8081-sandboxid.region.domain -> 3000-sandboxid.region.domain
-    const apiHostname = hostname.replace(/^8081-/, "3000-");
-    if (apiHostname !== hostname) {
-      return `${protocol}//${apiHostname}`;
+    const { origin, protocol, hostname } = window.location;
+    const normalizedOrigin = origin.replace(/\/$/, "");
+    const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
+    const isManusPreview = /\.manus\.computer$/i.test(hostname) || /^8081-/.test(hostname);
+    const isTrustedSameOrigin = /\.vercel\.app$/i.test(hostname);
+
+    if (isLocalHost) {
+      return `${protocol}//${hostname}:3000`;
+    }
+
+    if (isTrustedSameOrigin && /\/\/(?:[^/]+\.)?vercel\.app$/i.test(normalizedOrigin)) {
+      return normalizedOrigin;
+    }
+
+    if (isManusPreview) {
+      return VERIFIED_AGENT_WALLET_API_BASE_URL;
     }
   }
 
-  // On native or when no runtime mapping is available, fall back to the
-  // currently verified Agent Wallet backend so资产、登录与链上能力始终指向同一可信链路。
   return VERIFIED_AGENT_WALLET_API_BASE_URL;
 }
 
