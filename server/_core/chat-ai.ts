@@ -371,26 +371,30 @@ function buildIntentReplyDraft(action: ChatIntentAction, message: string, wallet
   const summary = summarizeUserMessage(message);
 
   if (action === 'asset') {
-    return '我会先查询你当前 Agent Wallet 的真实资产与持仓情况。';
+    return '我会先结合你当前 Agent Wallet 的真实资产、链上余额与持仓给出结论。';
   }
 
   if (action === 'swap') {
-    return `已识别你的兑换请求（${summary}），我会继续准备兑换报价与路径。`;
+    return `已识别你的兑换请求（${summary}），我会继续准备真实报价、可执行路径和下一步确认卡片。`;
   }
 
   if (action === 'earn') {
-    return `已识别你的赚币需求（${summary}），我会结合实时收益池继续给出方案。`;
+    return `已识别你的赚币需求（${summary}），我会结合当前真实收益池、风险等级与预估收益继续给出方案。`;
   }
 
   if (action === 'profit') {
-    return `已开始整理与你当前仓位相关的收益数据（${summary}）。`;
+    return `我会先汇总你当前仓位的收益、APY 与今日变化（${summary}）。`;
   }
 
   if (action === 'deposit') {
-    return '我会先查询你当前 Agent Wallet 可用的充值地址与网络。';
+    return '我会先查询你当前 Agent Wallet 可用的真实充值地址、网络与入金说明。';
   }
 
-  return `我是 H Wallet，你可以直接告诉我想查的行情、资产、赚币方案或兑换需求（当前请求：${summary}）。`;
+  if (wallet?.evmAddress || wallet?.solanaAddress) {
+    return `我是 H Wallet，你可以直接让我分析行情、读取资产、生成赚币方案或准备兑换动作（当前请求：${summary}）。`;
+  }
+
+  return `我是 H Wallet，你可以直接告诉我想分析哪个币、查询什么资产，或希望我为你执行哪一步链上动作（当前请求：${summary}）。`;
 }
 
 function buildGeneralDepositFallback(): DepositInfo {
@@ -760,6 +764,48 @@ async function fetchOkxPublicTickerPrice(symbol: string) {
   };
 }
 
+async function buildSmartMarketNarrative(params: {
+  symbol: string;
+  priceText: string;
+  sourceLabel: string;
+  marketTime?: string;
+}) {
+  const { symbol, priceText, sourceLabel, marketTime } = params;
+  const baseReply = `${symbol} 当前价格约为 ${priceText}${marketTime ? `，更新时间 ${marketTime}` : ''}，数据来自 ${sourceLabel}。`;
+
+  try {
+    const payload = await invokeLLM({
+      temperature: 0.2,
+      maxTokens: 220,
+      responseFormat: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是 H Wallet 的加密市场分析助手。请基于给定价格上下文，只返回 JSON。JSON 必须包含 reply 字段。reply 必须是简洁、专业、面向执行的中文，不要编造额外行情数据，不要输出 Markdown，不要使用项目符号。回复结构建议为：先给出当前价格结论，再给出一句短线观察或下一步可执行建议。',
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({ symbol, priceText, sourceLabel, marketTime: marketTime ?? '' }),
+        },
+      ],
+    });
+
+    const content = extractJsonContent(payload as unknown as Record<string, unknown>);
+    if (content) {
+      const parsed = JSON.parse(content) as Record<string, unknown>;
+      const reply = normalizeText(parsed.reply);
+      if (reply) {
+        return reply;
+      }
+    }
+  } catch (error) {
+    console.warn('[ChatAI] smart market narrative failed', error);
+  }
+
+  return `${baseReply} 如果你愿意，我可以继续帮你判断短线强弱、给出观察位，或直接进入兑换。`;
+}
+
 async function buildMarketReply(symbol: string): Promise<MarketReply> {
   const normalized = normalizeMarketSymbol(symbol);
 
@@ -771,18 +817,23 @@ async function buildMarketReply(symbol: string): Promise<MarketReply> {
       SOL: { address: 'So11111111111111111111111111111111111111112', chain: 'solana' },
       OKB: { address: '0x75231f58b43240c9718dd58b4967c5114342a86c', chain: 'ethereum' },
     };
-    const target = symbolToAddress[normalized];
-    if (target) {
-      const info = await callMcpTool<any>('token_price_info', { address: target.address, chain: target.chain });
-      if (info?.price) {
-        return {
-          priceSymbol: normalized,
-          priceText: `${formatPrice(Number(info.price))} USDT`,
-          reply: `${normalized} 当前价格约为 ${formatPrice(Number(info.price))} USDT，数据来自 OKX MCP。`,
-          mockMode: false,
-        };
+      const target = symbolToAddress[normalized];
+      if (target) {
+        const info = await callMcpTool<any>('token_price_info', { address: target.address, chain: target.chain });
+        if (info?.price) {
+          const priceText = `${formatPrice(Number(info.price))} USDT`;
+          return {
+            priceSymbol: normalized,
+            priceText,
+            reply: await buildSmartMarketNarrative({
+              symbol: normalized,
+              priceText,
+              sourceLabel: 'OKX MCP',
+            }),
+            mockMode: false,
+          };
+        }
       }
-    }
   } catch (e) {
     console.warn('[ChatAI] MCP price fetch failed, fallback to legacy', e);
   }
@@ -791,11 +842,16 @@ async function buildMarketReply(symbol: string): Promise<MarketReply> {
     const market = await fetchOkxRealtimePrice(normalized);
     if (market && Number.isFinite(market.price)) {
       const marketTime = formatMarketTime(market.time);
-      const timeSuffix = marketTime ? `，更新时间 ${marketTime}` : '';
+      const priceText = `${formatPrice(market.price)} USDT`;
       return {
         priceSymbol: market.symbol,
-        priceText: `${formatPrice(market.price)} USDT`,
-        reply: `${market.symbol} 当前价格约为 ${formatPrice(market.price)} USDT${timeSuffix}。`,
+        priceText,
+        reply: await buildSmartMarketNarrative({
+          symbol: market.symbol,
+          priceText,
+          sourceLabel: 'OKX 实时行情',
+          marketTime: marketTime || undefined,
+        }),
         mockMode: false,
       };
     }
@@ -807,11 +863,16 @@ async function buildMarketReply(symbol: string): Promise<MarketReply> {
     const market = await fetchOkxPublicTickerPrice(normalized);
     if (market && Number.isFinite(market.price)) {
       const marketTime = formatMarketTime(market.time);
-      const timeSuffix = marketTime ? `，更新时间 ${marketTime}` : '';
+      const priceText = `${formatPrice(market.price)} USDT`;
       return {
         priceSymbol: market.symbol,
-        priceText: `${formatPrice(market.price)} USDT`,
-        reply: `${market.symbol} 当前价格约为 ${formatPrice(market.price)} USDT${timeSuffix}。`,
+        priceText,
+        reply: await buildSmartMarketNarrative({
+          symbol: market.symbol,
+          priceText,
+          sourceLabel: 'OKX 公共行情',
+          marketTime: marketTime || undefined,
+        }),
         mockMode: false,
       };
     }
@@ -822,7 +883,7 @@ async function buildMarketReply(symbol: string): Promise<MarketReply> {
   return {
     priceSymbol: normalized,
     priceText: '',
-    reply: `${normalized} 的实时价格暂时不可用，请稍后重试。`,
+    reply: `${normalized} 的实时价格暂时不可用，请稍后重试。如果你愿意，我也可以先帮你查看其它币种、资产情况，或准备后续兑换动作。`,
     mockMode: false,
   };
 }
@@ -945,7 +1006,7 @@ async function callPrimaryLlmChatIntent(message: string, wallet?: WalletSnapshot
       {
         role: 'system',
         content:
-          '你是 H Wallet 的 AI 驱动钱包助手。你需要识别用户消息属于 market、asset、swap、earn、profit、deposit、general 哪一种意图，并只返回 JSON。JSON 字段必须包含 action, confidence, reply, priceSymbol, priceText, assetSummary, swapMessage。若是查行情，只需识别 symbol 并给出简短自然语言答复草稿，最终实时价格会由系统补齐；若是查资产，reply 与 assetSummary 给出资产总结；若是 swap，reply 简短说明将进入兑换流程，swapMessage 返回原始兑换描述；若是 earn、profit、deposit，只需给出简短草稿回复，具体卡片数据由系统补齐；若是 general，reply 给出友好回答。不要返回 Markdown。',
+          '你是 H Wallet 的 AI 驱动钱包助手，也是用户的链上行情分析与执行入口。你需要识别用户消息属于 market、asset、swap、earn、profit、deposit、general 哪一种意图，并只返回 JSON。JSON 字段必须包含 action, confidence, reply, priceSymbol, priceText, assetSummary, swapMessage。reply 必须是简洁、专业、面向下一步执行的中文。若是查行情，只需识别 symbol 并给出简短分析草稿或下一步建议，不能编造实时价格，最终实时价格会由系统补齐；若是查资产，reply 与 assetSummary 需要聚焦真实资产总结；若是 swap，reply 说明将进入兑换路径，swapMessage 返回原始兑换描述；若是 earn、profit、deposit，只需给出简短草稿回复，具体卡片数据由系统补齐；若是 general，reply 要把用户自然引导到可执行的钱包动作。不要返回 Markdown、代码块或额外解释。',
       },
       {
         role: 'user',
@@ -1076,25 +1137,22 @@ export async function getChatAiIntent(message: string, wallet?: WalletSnapshot |
   }
 
   const fastIntent = await buildFallbackIntent(normalized, wallet);
-  if (fastIntent.action !== 'general') {
-    if (fastIntent.action === 'earn') {
-      return buildEarnIntentResult(normalized, wallet);
-    }
+  if (fastIntent.action === 'earn') {
+    return buildEarnIntentResult(normalized, wallet);
+  }
 
-    if (fastIntent.action === 'profit') {
-      return buildProfitIntentResult(wallet);
-    }
+  if (fastIntent.action === 'profit') {
+    return buildProfitIntentResult(wallet);
+  }
 
-    if (fastIntent.action === 'deposit') {
-      const depositResult = buildDepositIntentResult(wallet);
-      return buildChatResult(depositResult.intent, { deposit: depositResult.deposit });
-    }
-
-    return buildChatResult(fastIntent);
+  if (fastIntent.action === 'deposit') {
+    const depositResult = buildDepositIntentResult(wallet);
+    return buildChatResult(depositResult.intent, { deposit: depositResult.deposit });
   }
 
   try {
-    const intent = await callPrimaryLlmChatIntent(normalized, wallet);
+    const llmIntent = await callPrimaryLlmChatIntent(normalized, wallet);
+    const intent = fastIntent.action !== 'general' && llmIntent.action === 'general' ? fastIntent : llmIntent;
 
     if (intent.action === 'earn') {
       const earnResult = await buildEarnIntentResult(normalized, wallet);

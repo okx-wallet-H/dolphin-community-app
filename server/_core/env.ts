@@ -26,6 +26,9 @@ const getFirstDefinedEnv = (...keys: string[]) => {
   return "";
 };
 
+const anthropicApiKey = getFirstDefinedEnv("ANTHROPIC_API_KEY", "CLAUDE_API_KEY");
+const llmProvider = getFirstDefinedEnv("LLM_PROVIDER", "MODEL_PROVIDER") || (anthropicApiKey ? "anthropic" : "openai-compatible");
+
 export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
   cookieSecret: process.env.JWT_SECRET ?? "",
@@ -35,6 +38,7 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  llmProvider,
   llmApiUrl: getFirstDefinedEnv(
     "LLM_API_URL",
     "GLM_API_URL",
@@ -52,6 +56,9 @@ export const ENV = {
     "BUILT_IN_FORGE_API_KEY",
   ),
   llmModel: getFirstDefinedEnv("LLM_MODEL", "GLM_MODEL", "BIGMODEL_MODEL") || "glm-5.1",
+  anthropicApiUrl: getFirstDefinedEnv("ANTHROPIC_API_URL", "CLAUDE_API_URL") || "https://api.anthropic.com/v1/messages",
+  anthropicApiKey,
+  anthropicModel: getFirstDefinedEnv("ANTHROPIC_MODEL", "CLAUDE_MODEL") || "claude-3-5-sonnet-latest",
   okxApiKey: getFirstDefinedEnv("OKX_API_KEY"),
   okxApiSecret: getFirstDefinedEnv("OKX_API_SECRET", "OKX_SECRET_KEY"),
   okxApiPassphrase: getFirstDefinedEnv("OKX_API_PASSPHRASE", "OKX_PASSPHRASE"),

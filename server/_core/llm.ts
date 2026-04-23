@@ -149,7 +149,6 @@ const normalizeMessage = (message: Message) => {
 
   const contentParts = ensureArray(message.content).map(normalizeContentPart);
 
-  // 如果只有文本内容，为了兼容性将其折叠为单个字符串
   if (contentParts.length === 1 && contentParts[0].type === "text") {
     return {
       role,
@@ -219,13 +218,43 @@ const normalizeApiUrl = (rawUrl: string) => {
   return `${trimmed}/chat/completions`;
 };
 
-const resolveApiUrl = () => normalizeApiUrl(ENV.llmApiUrl || ENV.forgeApiUrl);
+const normalizeAnthropicApiUrl = (rawUrl: string) => {
+  const trimmed = rawUrl.trim().replace(/\/$/, "");
+  if (!trimmed) {
+    return "https://api.anthropic.com/v1/messages";
+  }
 
-const resolveApiKey = () => ENV.llmApiKey || ENV.forgeApiKey;
+  if (/\/messages$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/\/v1$/i.test(trimmed)) {
+    return `${trimmed}/messages`;
+  }
+
+  return `${trimmed}/v1/messages`;
+};
+
+const resolveProvider = () => (ENV.llmProvider === "anthropic" ? "anthropic" : "openai-compatible");
+
+const resolveApiUrl = () =>
+  resolveProvider() === "anthropic"
+    ? normalizeAnthropicApiUrl(ENV.anthropicApiUrl)
+    : normalizeApiUrl(ENV.llmApiUrl || ENV.forgeApiUrl);
+
+const resolveApiKey = () =>
+  resolveProvider() === "anthropic"
+    ? ENV.anthropicApiKey
+    : (ENV.llmApiKey || ENV.forgeApiKey);
+
+const resolveModel = () =>
+  resolveProvider() === "anthropic"
+    ? (ENV.anthropicModel?.trim() || "claude-3-5-sonnet-latest")
+    : (ENV.llmModel?.trim() || "glm-5.1");
 
 const assertApiKey = () => {
   if (!resolveApiKey()) {
-    throw new Error("LLM_API_KEY is not configured");
+    throw new Error(resolveProvider() === "anthropic" ? "ANTHROPIC_API_KEY is not configured" : "LLM_API_KEY is not configured");
   }
 };
 
@@ -269,6 +298,101 @@ const normalizeResponseFormat = ({
   };
 };
 
+function serializeAnthropicContent(part: MessageContent) {
+  if (typeof part === "string") {
+    return part;
+  }
+
+  if (part.type === "text") {
+    return part.text;
+  }
+
+  if (part.type === "image_url") {
+    return `[image] ${part.image_url.url}`;
+  }
+
+  if (part.type === "file_url") {
+    return `[file] ${part.file_url.url}`;
+  }
+
+  return JSON.stringify(part);
+}
+
+function normalizeAnthropicMessages(messages: Message[]) {
+  const systemParts: string[] = [];
+  const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+  for (const message of messages) {
+    const content = ensureArray(message.content)
+      .map(serializeAnthropicContent)
+      .join("\n")
+      .trim();
+
+    if (!content) continue;
+
+    if (message.role === "system") {
+      systemParts.push(content);
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      anthropicMessages.push({ role: "assistant", content });
+      continue;
+    }
+
+    anthropicMessages.push({ role: "user", content });
+  }
+
+  if (anthropicMessages.length === 0) {
+    anthropicMessages.push({ role: "user", content: "继续。" });
+  }
+
+  return {
+    system: systemParts.join("\n\n").trim() || undefined,
+    messages: anthropicMessages,
+  };
+}
+
+function normalizeAnthropicResult(payload: Record<string, unknown>, model: string): InvokeResult {
+  const contentParts = Array.isArray(payload.content) ? payload.content : [];
+  const text = contentParts
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      const typedPart = part as Record<string, unknown>;
+      return typedPart.type === "text" && typeof typedPart.text === "string" ? typedPart.text : "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  const usage = payload.usage && typeof payload.usage === "object"
+    ? payload.usage as Record<string, unknown>
+    : undefined;
+  const promptTokens = Number(usage?.input_tokens ?? 0);
+  const completionTokens = Number(usage?.output_tokens ?? 0);
+
+  return {
+    id: String(payload.id ?? `anthropic-${Date.now()}`),
+    created: Math.floor(Date.now() / 1000),
+    model: String(payload.model ?? model),
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: "assistant",
+          content: text,
+        },
+        finish_reason: typeof payload.stop_reason === "string" ? payload.stop_reason : null,
+      },
+    ],
+    usage: {
+      prompt_tokens: Number.isFinite(promptTokens) ? promptTokens : 0,
+      completion_tokens: Number.isFinite(completionTokens) ? completionTokens : 0,
+      total_tokens: (Number.isFinite(promptTokens) ? promptTokens : 0) + (Number.isFinite(completionTokens) ? completionTokens : 0),
+    },
+  };
+}
+
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
 
@@ -282,10 +406,60 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     responseFormat,
     response_format,
     temperature,
+    maxTokens,
+    max_tokens,
   } = params;
 
+  const provider = resolveProvider();
+  const model = resolveModel();
+  const maxTokensValue = typeof maxTokens === "number"
+    ? maxTokens
+    : (typeof max_tokens === "number" ? max_tokens : undefined);
+
+  if (provider === "anthropic") {
+    if (tools && tools.length > 0) {
+      throw new Error("Anthropic provider does not yet support tool calling in this wrapper");
+    }
+
+    if (toolChoice || tool_choice) {
+      throw new Error("Anthropic provider does not yet support tool_choice in this wrapper");
+    }
+
+    const normalizedAnthropic = normalizeAnthropicMessages(messages);
+    const payload: Record<string, unknown> = {
+      model,
+      max_tokens: Number.isFinite(maxTokensValue) ? maxTokensValue : 4096,
+      messages: normalizedAnthropic.messages,
+    };
+
+    if (normalizedAnthropic.system) {
+      payload.system = normalizedAnthropic.system;
+    }
+
+    if (typeof temperature === "number" && Number.isFinite(temperature)) {
+      payload.temperature = temperature;
+    }
+
+    const response = await fetch(resolveApiUrl(), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": resolveApiKey(),
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Anthropic invoke failed: ${response.status} ${response.statusText} – ${errorText}`);
+    }
+
+    return normalizeAnthropicResult((await response.json()) as Record<string, unknown>, model);
+  }
+
   const payload: Record<string, unknown> = {
-    model: ENV.llmModel?.trim() || "glm-5.1",
+    model,
     messages: messages.map(normalizeMessage),
   };
 
@@ -298,7 +472,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768;
+  payload.max_tokens = Number.isFinite(maxTokensValue) ? maxTokensValue : 32768;
   if (typeof temperature === "number" && Number.isFinite(temperature)) {
     payload.temperature = temperature;
   }
